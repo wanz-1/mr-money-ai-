@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "Enterprise-grade AI document intelligence platform."
 requires-python = ">=3.9"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "HumanProof AI Contributors" }]
 dependencies = [
     "psycopg2-binary>=2.9",
@@ -28,6 +28,9 @@ dev = [
 [tool.humanproof]
 analysis_mode = "local-first"
 report_formats = ["json", "md", "html", "docx", "pdf"]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
 
 [tool.ruff]
 line-length = 120
