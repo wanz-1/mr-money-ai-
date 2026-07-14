@@ -66,6 +66,29 @@ from .orchestrator import review_document, review_text
 from .rbac import Permission, has_permission
 from .reports import export_report
 
+try:
+    from .router import route_task, get_routing_info
+except ImportError:
+    route_task = None
+    get_routing_info = None
+
+try:
+    from .memory import ConversationMemory
+except ImportError:
+    ConversationMemory = None
+
+try:
+    from .search import web_search, research_topic, fetch_page
+except ImportError:
+    web_search = None
+    research_topic = None
+    fetch_page = None
+
+try:
+    from .specialists import AgentRegistry
+except ImportError:
+    AgentRegistry = None
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_ROOT = REPO_ROOT / "frontend"
@@ -137,6 +160,22 @@ class HumanProofHandler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/ai/sessions/"):
             self._handle_ai_session_get(path)
+            return
+
+        if path == "/api/ai/routing":
+            self._handle_routing_info()
+            return
+
+        if path.startswith("/api/agents"):
+            self._handle_list_agents()
+            return
+
+        if path.startswith("/api/memory/") and "/search" in path:
+            self._handle_memory_search(path, query)
+            return
+
+        if path.startswith("/api/memory/"):
+            self._handle_memory_list(path)
             return
 
         self._serve_static(parsed.path)
@@ -211,6 +250,22 @@ class HumanProofHandler(BaseHTTPRequestHandler):
 
         if path == "/api/ai/image":
             self._handle_ai_image()
+            return
+
+        if path == "/api/search":
+            self._handle_web_search()
+            return
+
+        if path == "/api/research":
+            self._handle_research_topic()
+            return
+
+        if path == "/api/agents/run":
+            self._handle_run_agent()
+            return
+
+        if path.startswith("/api/memory/"):
+            self._handle_memory_add(path)
             return
 
         self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
@@ -1021,8 +1076,120 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 "approval_workflows",
                 "ai_assistant",
             ],
+            "routing": get_routing_info is not None,
+            "webSearch": web_search is not None,
+            "agents": AgentRegistry is not None,
+            "memory": ConversationMemory is not None,
             "analysisMode": "local-first transparent decision support",
         }
+
+    # -----------------------------------------------------------------------
+    # Router / Agent / Memory / Search endpoints
+    # -----------------------------------------------------------------------
+
+    def _handle_routing_info(self) -> None:
+        if get_routing_info:
+            self._send_json(get_routing_info())
+        else:
+            self._send_json({"error": "Router not available"}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _handle_list_agents(self) -> None:
+        if AgentRegistry:
+            registry = AgentRegistry()
+            agents = registry.list_agents()
+            self._send_json({"agents": agents})
+        else:
+            self._send_json({"error": "Agents not available"}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _handle_web_search(self) -> None:
+        if not web_search:
+            self._send_json({"error": "Search not available"}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        query = data.get("query", "")
+        max_results = data.get("maxResults", 5)
+        results = web_search(query, max_results)
+        self._send_json({
+            "results": [{"title": r.title, "url": r.url, "snippet": r.snippet, "source": r.source} for r in results],
+            "query": query,
+        })
+
+    def _handle_research_topic(self) -> None:
+        if not research_topic:
+            self._send_json({"error": "Research not available"}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        topic = data.get("topic", data.get("query", ""))
+        depth = data.get("depth", 3)
+        result = research_topic(topic, depth)
+        self._send_json(result)
+
+    def _handle_run_agent(self) -> None:
+        if not AgentRegistry:
+            self._send_json({"error": "Agents not available"}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        agent_name = data.get("agent", "executive")
+        query = data.get("query", "")
+        context = data.get("context", {})
+        registry = AgentRegistry()
+        agent = registry.get_agent(agent_name)
+        if not agent:
+            self._send_json({"error": f"Unknown agent: {agent_name}"}, HTTPStatus.BAD_REQUEST)
+            return
+        result = agent.process(query, context)
+        self._send_json(result)
+
+    def _handle_memory_list(self, path: str) -> None:
+        if not ConversationMemory:
+            self._send_json({"error": "Memory not available"}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        parts = path.strip("/").split("/")
+        user_id = parts[1] if len(parts) > 1 else "default"
+        mem = ConversationMemory(user_id)
+        recent = mem.get_recent(50)
+        stats = mem.get_stats()
+        self._send_json({
+            "memories": [m.to_dict() for m in recent],
+            "stats": stats,
+        })
+
+    def _handle_memory_add(self, path: str) -> None:
+        if not ConversationMemory:
+            self._send_json({"error": "Memory not available"}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        parts = path.strip("/").split("/")
+        user_id = parts[1] if len(parts) > 1 else "default"
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        mem = ConversationMemory(user_id)
+        content = data.get("content", "")
+        category = data.get("category", "knowledge")
+        importance = data.get("importance", 0.5)
+        entry = mem.add(content, category, importance=importance)
+        self._send_json({"entry": entry.to_dict()})
+
+    def _handle_memory_search(self, path: str, query: str) -> None:
+        if not ConversationMemory:
+            self._send_json({"error": "Memory not available"}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        parts = path.strip("/").split("/")
+        user_id = parts[1] if len(parts) > 1 else "default"
+        mem = ConversationMemory(user_id)
+        q = query.split("q=")[1].split("&")[0] if "q=" in query else ""
+        results = mem.search(q, limit=10)
+        self._send_json({"results": [r.to_dict() for r in results]})
 
     # -----------------------------------------------------------------------
     # Static file serving

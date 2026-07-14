@@ -419,52 +419,143 @@
 
         <!-- RESEARCH PAGE -->
         <div x-show="$store.app.page === 'research'" x-transition:enter="page-enter" class="research-page">
-          <div class="page-header">
-            <h2>Research Intelligence</h2>
+          <h2>Research Intelligence</h2>
+
+          <!-- Research tabs -->
+          <div class="tabs" role="tablist" style="margin-bottom:16px">
+            <button class="tab" role="tab" :aria-selected="$store.research.tab === 'search'" :class="{ active: $store.research.tab === 'search' }" @click="$store.research.tab = 'search'">Web Search</button>
+            <button class="tab" role="tab" :aria-selected="$store.research.tab === 'graph'" :class="{ active: $store.research.tab === 'graph' }" @click="$store.research.tab = 'graph'">Knowledge Graph</button>
+            <button class="tab" role="tab" :aria-selected="$store.research.tab === 'citation'" :class="{ active: $store.research.tab === 'citation' }" @click="$store.research.tab = 'citation'">Citation Manager</button>
+            <button class="tab" role="tab" :aria-selected="$store.research.tab === 'agents'" :class="{ active: $store.research.tab === 'agents' }" @click="$store.research.tab = 'agents'; $store.search.loadAgents()">AI Agents</button>
           </div>
-          <div class="research-grid">
+
+          <!-- Web Search Tab -->
+          <div class="tab-content" x-show="$store.research.tab === 'search'">
+            <div class="panel">
+              <h3>Web Search</h3>
+              <p class="muted">Search the web for information on any topic.</p>
+              <div style="display:flex;gap:8px;margin:12px 0">
+                <input type="search" x-model="$store.search.query" placeholder="Search the web..." style="flex:1" @keydown.enter="$store.search.search()">
+                <button @click="$store.search.search()" :disabled="$store.search.busy">
+                  <span x-show="!$store.search.busy">Search</span>
+                  <span x-show="$store.search.busy">Searching...</span>
+                </button>
+              </div>
+              <template x-if="$store.search.results.length > 0">
+                <div>
+                  <template x-for="r in $store.search.results" :key="r.url">
+                    <article class="finding" style="margin-bottom:12px">
+                      <h3><a :href="r.url" target="_blank" rel="noopener" x-text="r.title"></a></h3>
+                      <p x-text="r.snippet"></p>
+                      <div class="finding-meta">
+                        <span class="badge" x-text="r.source || 'web'"></span>
+                      </div>
+                    </article>
+                  </template>
+                </div>
+              </template>
+              <template x-if="$store.search.results.length === 0 && !$store.search.busy">
+                <p class="muted">Enter a search query to find information.</p>
+              </template>
+            </div>
+          </div>
+
+          <!-- Knowledge Graph Tab -->
+          <div class="tab-content" x-show="$store.research.tab === 'graph'">
             <div class="panel">
               <h3>Knowledge Graph</h3>
               <p class="muted">Paste document text to generate a knowledge graph of concepts and relationships.</p>
-              <textarea x-model="$store.research.text" placeholder="Paste text to analyze..." style="min-height:160px"></textarea>
-              <button @click="$store.research.generateGraph()" :disabled="$store.research.busy">Generate Graph</button>
-              <div x-show="$store.research.graph" class="graph-output">
-                <pre x-text="$store.research.graph?.to_mermaid?.() || $store.research.graphMermaid" class="code-block"></pre>
-              </div>
+              <textarea x-model="$store.research.text" placeholder="Paste document text here..." style="min-height:120px;margin:12px 0"></textarea>
+              <button @click="$store.research.generateGraph()" :disabled="$store.research.busy">
+                <span x-show="!$store.research.busy">Generate Graph</span>
+                <span x-show="$store.research.busy">Generating...</span>
+              </button>
+              <template x-if="$store.research.graphMermaid">
+                <pre style="background:var(--surface-2);padding:12px;border-radius:var(--radius-sm);margin-top:12px;overflow-x:auto;font-size:0.85rem;white-space:pre-wrap" x-text="$store.research.graphMermaid"></pre>
+              </template>
             </div>
+          </div>
+
+          <!-- Citation Manager Tab -->
+          <div class="tab-content" x-show="$store.research.tab === 'citation'">
             <div class="panel">
               <h3>Citation Manager</h3>
               <p class="muted">Parse, validate, and convert citations between styles.</p>
-              <textarea x-model="$store.research.citationText" placeholder="Paste a citation..." style="min-height:100px"></textarea>
-              <div class="toolbar">
-                <select x-model="$store.research.citationStyle">
-                  <option value="apa">APA</option>
-                  <option value="mla">MLA</option>
-                  <option value="chicago">Chicago</option>
-                  <option value="harvard">Harvard</option>
-                  <option value="ieee">IEEE</option>
-                  <option value="vancouver">Vancouver</option>
+              <label class="field">
+                <span>Citation text</span>
+                <input type="text" x-model="$store.research.citationText" placeholder="e.g. Smith, J. (2021). Title of article. Journal, 10(2), 123-145.">
+              </label>
+              <div style="display:flex;gap:8px;align-items:center;margin:12px 0">
+                <label><span>Style</span>
+                  <select x-model="$store.research.citationStyle">
+                    <option value="apa">APA</option>
+                    <option value="mla">MLA</option>
+                    <option value="chicago">Chicago</option>
+                    <option value="harvard">Harvard</option>
+                    <option value="ieee">IEEE</option>
+                    <option value="vancouver">Vancouver</option>
+                  </select>
+                </label>
+                <button class="secondary sm" @click="$store.research.validateCitation()">Validate</button>
+                <button class="secondary sm" @click="$store.research.convertCitation()">Convert</button>
+              </div>
+              <template x-if="$store.research.citationResult">
+                <div style="margin-top:12px">
+                  <template x-if="$store.research.citationResult.isValid">
+                    <p style="color:var(--ok)">Citation is valid</p>
+                  </template>
+                  <template x-if="!$store.research.citationResult.isValid">
+                    <div>
+                      <p style="color:var(--warning)">Issues found:</p>
+                      <ul>
+                        <template x-for="issue in ($store.research.citationResult.issues || [])" :key="issue">
+                          <li x-text="issue" class="muted"></li>
+                        </template>
+                      </ul>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- AI Agents Tab -->
+          <div class="tab-content" x-show="$store.research.tab === 'agents'">
+            <div class="panel">
+              <h3>AI Agents</h3>
+              <p class="muted">Select a specialized agent and run a query.</p>
+              <label class="field">
+                <span>Agent</span>
+                <select x-model="$store.search.selectedAgent">
+                  <template x-for="agent in $store.search.agents" :key="agent.name">
+                    <option :value="agent.name" x-text="agent.name + ' - ' + agent.description"></option>
+                  </template>
                 </select>
-                <button @click="$store.research.validateCitation()" :disabled="$store.research.busy">Validate</button>
-                <button class="secondary" @click="$store.research.convertCitation()" :disabled="$store.research.busy">Convert</button>
+              </label>
+              <div style="display:flex;gap:8px;margin:12px 0">
+                <input type="text" x-model="$store.search.agentQuery" placeholder="Enter your query..." style="flex:1" @keydown.enter="$store.search.runAgent()">
+                <button @click="$store.search.runAgent()" :disabled="$store.search.busy">
+                  <span x-show="!$store.search.busy">Run Agent</span>
+                  <span x-show="$store.search.busy">Running...</span>
+                </button>
               </div>
-              <div x-show="$store.research.citationResult" class="result-box">
-                <template x-if="$store.research.citationResult">
-                  <div>
-                    <p x-show="$store.research.citationResult.isValid" class="text-ok">Citation is valid</p>
-                    <template x-if="!$store.research.citationResult.isValid">
-                      <div>
-                        <p class="text-danger">Issues found:</p>
-                        <ul>
-                          <template x-for="issue in $store.research.citationResult.issues" :key="issue">
-                            <li class="muted" x-text="issue"></li>
-                          </template>
-                        </ul>
-                      </div>
-                    </template>
+              <template x-if="$store.search.agentResult">
+                <div style="margin-top:16px;padding:16px;background:var(--surface-2);border-radius:var(--radius);border:1px solid var(--line)">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                    <strong>Agent Result</strong>
+                    <span class="badge badge-info" x-text="'Confidence: ' + (($store.search.agentResult.confidence || 0) * 100).toFixed(0) + '%'"></span>
                   </div>
-                </template>
-              </div>
+                  <div style="white-space:pre-wrap;line-height:1.6" x-html="$store.ai.renderMarkdown($store.search.agentResult.response || 'No response')"></div>
+                  <template x-if="$store.search.agentResult.sources && $store.search.agentResult.sources.length > 0">
+                    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+                      <strong class="muted" style="font-size:0.8rem">Sources:</strong>
+                      <template x-for="src in $store.search.agentResult.sources" :key="src">
+                        <p class="muted small" x-text="src"></p>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </template>
             </div>
           </div>
         </div>
