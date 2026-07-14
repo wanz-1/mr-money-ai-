@@ -9,7 +9,7 @@ COPY pyproject.toml ./
 COPY backend ./backend
 COPY frontend ./frontend
 
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir .
 
 EXPOSE 8765
 
