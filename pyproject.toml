@@ -1,0 +1,47 @@
+[project]
+name = "humanproof-ai"
+version = "0.2.0"
+description = "Enterprise-grade AI document intelligence platform."
+requires-python = ">=3.9"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "HumanProof AI Contributors" }]
+dependencies = [
+    "psycopg2-binary>=2.9",
+    "PyJWT>=2.8",
+    "bcrypt>=4.1",
+]
+
+[project.scripts]
+humanproof-review = "backend.humanproof.cli:main"
+humanproof-server = "backend.humanproof.server:main"
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "bandit>=1.7",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
+
+[tool.humanproof]
+analysis_mode = "local-first"
+report_formats = ["json", "md", "html", "docx", "pdf"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "S", "B", "A", "C4", "SIM"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+

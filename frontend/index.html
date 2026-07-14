@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en" x-data x-init="$store.app.init()">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>HumanProof AI</title>
+  <meta name="description" content="Document intelligence platform for writing review, AI-writing analysis, citation checks, and publication readiness.">
+  <meta name="theme-color" content="#0e6e82">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="HumanProof AI">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icons/icon-192.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icons/icon-192.svg">
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    }
+  </script>
+</head>
+<body :class="{ 'dark': $store.app.darkMode }">
+
+  <!-- Keyboard shortcuts overlay -->
+  <div class="shortcuts-overlay" x-show="$store.shortcuts.show" x-transition.opacity @click="$store.shortcuts.show = false" @keydown.escape.window="$store.shortcuts.show = false">
+    <div class="shortcuts-panel" @click.stop>
+      <h3>Keyboard Shortcuts</h3>
+      <div class="shortcut-grid">
+        <template x-for="s in $store.shortcuts.list" :key="s.keys">
+          <div class="shortcut-row">
+            <kbd x-text="s.keys"></kbd>
+            <span x-text="s.desc"></span>
+          </div>
+        </template>
+      </div>
+      <button class="secondary" @click="$store.shortcuts.show = false">Close</button>
+    </div>
+  </div>
+
+  <!-- Toast notifications -->
+  <div class="toast-container">
+    <template x-for="t in $store.toast.items" :key="t.id">
+      <div class="toast" :class="'toast-' + t.type" x-show="t.visible" x-transition
+           x-init="setTimeout(() => $store.toast.dismiss(t.id), 4000)">
+        <span x-text="t.message"></span>
+      </div>
+    </template>
+  </div>
+
+  <!-- App shell -->
+  <div class="app-layout" x-show="$store.auth.loggedIn">
+    <!-- Sidebar -->
+    <nav class="sidebar" :class="{ 'sidebar-collapsed': $store.app.sidebarCollapsed }">
+      <div class="sidebar-brand">
+        <div class="brand-icon">HP</div>
+        <span class="brand-text" x-show="!$store.app.sidebarCollapsed">HumanProof AI</span>
+      </div>
+
+      <div class="sidebar-nav">
+        <a class="nav-item" :class="{ active: $store.app.page === 'review' }"
+           @click.prevent="$store.app.navigate('review')" href="#">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
+          <span x-show="!$store.app.sidebarCollapsed">Review</span>
+        </a>
+        <a class="nav-item" :class="{ active: $store.app.page === 'documents' }"
+           @click.prevent="$store.app.navigate('documents')" href="#">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>
+          <span x-show="!$store.app.sidebarCollapsed">Documents</span>
+        </a>
+        <a class="nav-item" :class="{ active: $store.app.page === 'templates' }"
+           @click.prevent="$store.app.navigate('templates')" href="#">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/></svg>
+          <span x-show="!$store.app.sidebarCollapsed">Templates</span>
+        </a>
+        <a class="nav-item" :class="{ active: $store.app.page === 'research' }"
+           @click.prevent="$store.app.navigate('research')" href="#">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <span x-show="!$store.app.sidebarCollapsed">Research</span>
+        </a>
+        <a class="nav-item" :class="{ active: $store.app.page === 'compare' }"
+           @click.prevent="$store.app.navigate('compare')" href="#">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M5 4a1 1 0 00-2 0v7a3 3 0 006 0V4a1 1 0 10-2 0v5a1 1 0 11-2 0V4zM11 4a1 1 0 10-2 0v7a3 3 0 006 0V4a1 1 0 10-2 0v5a1 1 0 11-2 0V4z"/></svg>
+          <span x-show="!$store.app.sidebarCollapsed">Compare</span>
+        </a>
+        <a class="nav-item" :class="{ active: $store.app.page === 'assistant' }"
+           @click.prevent="$store.app.navigate('assistant')" href="#">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/></svg>
+          <span x-show="!$store.app.sidebarCollapsed">AI Assistant</span>
+        </a>
+      </div>
+
+      <div class="sidebar-footer">
+        <a class="nav-item" @click.prevent="$store.app.sidebarCollapsed = !$store.app.sidebarCollapsed" href="#">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+          <span x-show="!$store.app.sidebarCollapsed">Collapse</span>
+        </a>
+        <a class="nav-item" @click.prevent="$store.shortcuts.show = true" href="#">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+          <span x-show="!$store.app.sidebarCollapsed">Shortcuts</span>
+        </a>
+      </div>
+    </nav>
+
+    <!-- Main content -->
+    <div class="main-content">
+      <!-- Top bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn mobile-menu-btn" @click="$store.app.sidebarCollapsed = !$store.app.sidebarCollapsed">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="20" height="20"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+          </button>
+          <div>
+            <p class="eyebrow" x-text="$store.app.pageTitle"></p>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <label class="api-field compact">
+            <span>API</span>
+            <input type="url" x-model="$store.app.apiBase" autocomplete="off">
+          </label>
+          <button class="icon-btn" @click="$store.app.toggleTheme()" :title="$store.app.darkMode ? 'Light mode' : 'Dark mode'">
+            <template x-if="!$store.app.darkMode">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>
+            </template>
+            <template x-if="$store.app.darkMode">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/></svg>
+            </template>
+          </button>
+          <div class="user-menu" x-data="{ open: false }">
+            <button class="icon-btn user-btn" @click="open = !open" x-text="$store.auth.user?.displayName?.[0] || '?'"></button>
+            <div class="dropdown" x-show="open" @click.outside="open = false" x-transition>
+              <div class="dropdown-header">
+                <strong x-text="$store.auth.user?.displayName"></strong>
+                <small x-text="$store.auth.user?.email"></small>
+              </div>
+              <button class="dropdown-item" @click="$store.auth.logout(); open = false">Sign out</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Page content -->
+      <main class="page-content">
+
+        <!-- REVIEW PAGE -->
+        <div x-show="$store.app.page === 'review'" x-transition:enter="page-enter" class="review-page">
+          <div class="review-grid">
+            <!-- Input panel -->
+            <section class="panel input-panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Review Workspace</h2>
+                  <p class="muted" x-text="$store.review.status"></p>
+                </div>
+                <button class="secondary sm" @click="$store.review.loadSample()">Load Sample</button>
+              </div>
+
+              <div class="drop-zone" id="dropZone"
+                   @dragover.prevent="$el.classList.add('dragging')"
+                   @dragleave="$el.classList.remove('dragging')"
+                   @drop.prevent="$el.classList.remove('dragging'); $store.review.handleDrop($event)">
+                <input type="file" accept=".txt,.md,.html,.json,.xml,.csv,.tex,.rtf,.docx,.odt,.epub,.xlsx,.pptx,.pdf"
+                       @change="$store.review.handleFile($event.target.files[0])">
+                <strong>Drop a document</strong>
+                <span class="muted">DOCX, PDF, TXT, RTF, ODT, MD, HTML, LaTeX, EPUB, CSV, XLSX, PPTX, JSON, XML</span>
+              </div>
+
+              <label class="field-label">Document text</label>
+              <textarea x-model="$store.review.text" spellcheck="true"
+                        placeholder="Paste or upload text for review."
+                        @keydown.ctrl.enter="$store.review.runReview()"></textarea>
+
+              <div class="toolbar">
+                <button @click="$store.review.runReview()" :disabled="$store.review.busy">
+                  <span x-show="!$store.review.busy">Run Review</span>
+                  <span x-show="$store.review.busy">Reviewing...</span>
+                </button>
+                <button class="secondary" @click="$store.review.clear()">Clear</button>
+              </div>
+            </section>
+
+            <!-- Results panel -->
+            <section class="panel results-panel">
+              <template x-if="!$store.review.report">
+                <div class="empty-state">
+                  <div class="empty-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                  </div>
+                  <p>Run a review to generate quality metrics, findings, and an action plan.</p>
+                </div>
+              </template>
+
+              <template x-if="$store.review.report">
+                <div class="results-content">
+                  <!-- Dashboard top -->
+                  <div class="dashboard-top">
+                    <div class="readiness-block">
+                      <p class="eyebrow">Publication Readiness</p>
+                      <div class="gauge-ring">
+                        <svg viewBox="0 0 120 120" class="gauge-svg">
+                          <circle cx="60" cy="60" r="52" class="gauge-bg"/>
+                          <circle cx="60" cy="60" r="52" class="gauge-fill"
+                                  :style="'stroke-dasharray: ' + ($store.review.report.scores.publication_readiness * 3.267) + ' 326.7'"/>
+                        </svg>
+                        <span class="gauge-value" x-text="$store.review.score('publication_readiness')"></span>
+                      </div>
+                    </div>
+                    <div class="report-actions">
+                      <button class="secondary sm" @click="$store.review.download('pdf')">PDF</button>
+                      <button class="secondary sm" @click="$store.review.download('docx')">DOCX</button>
+                      <button class="secondary sm" @click="$store.review.download('html')">HTML</button>
+                      <button class="secondary sm" @click="$store.review.download('md')">MD</button>
+                    </div>
+                  </div>
+
+                  <p class="summary" x-text="$store.review.report.summary"></p>
+
+                  <!-- Score grid -->
+                  <div class="score-grid">
+                    <template x-for="item in $store.review.scoreItems()" :key="item.key">
+                      <div class="score-tile">
+                        <span x-text="item.label"></span>
+                        <strong x-text="item.value"></strong>
+                        <div class="meter">
+                          <div class="meter-fill" :style="'width:' + item.pct + '%;background:' + item.color"></div>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+
+                  <!-- Tabs -->
+                  <div class="tabs">
+                    <button class="tab" :class="{ active: $store.review.tab === 'findings' }" @click="$store.review.tab = 'findings'">
+                      Findings <span class="tab-count" x-text="'(' + $store.review.filteredFindings().length + ')'"></span>
+                    </button>
+                    <button class="tab" :class="{ active: $store.review.tab === 'actions' }" @click="$store.review.tab = 'actions'">
+                      Action Plan
+                    </button>
+                    <button class="tab" :class="{ active: $store.review.tab === 'agents' }" @click="$store.review.tab = 'agents'">
+                      Agents
+                    </button>
+                    <button class="tab" :class="{ active: $store.review.tab === 'limits' }" @click="$store.review.tab = 'limits'">
+                      Limits
+                    </button>
+                  </div>
+
+                  <!-- Filters -->
+                  <div class="filters" x-show="$store.review.tab === 'findings'">
+                    <label>
+                      <span>Severity</span>
+                      <select x-model="$store.review.severityFilter">
+                        <option value="all">All</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                        <option value="info">Info</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Search</span>
+                      <input type="search" x-model="$store.review.searchQuery" placeholder="Category, title, recommendation">
+                    </label>
+                  </div>
+
+                  <!-- Findings tab -->
+                  <div class="tab-content" x-show="$store.review.tab === 'findings'">
+                    <template x-if="$store.review.filteredFindings().length === 0">
+                      <p class="muted">No findings match the current filters.</p>
+                    </template>
+                    <template x-for="f in $store.review.filteredFindings()" :key="f.title + f.agent">
+                      <article class="finding" :data-severity="f.severity">
+                        <div class="finding-header">
+                          <h3 x-text="f.title"></h3>
+                          <span class="badge" :class="'badge-' + f.severity" x-text="f.severity"></span>
+                        </div>
+                        <p x-text="f.message"></p>
+                        <p><strong>Recommendation:</strong> <span x-text="f.recommendation"></span></p>
+                        <div class="finding-meta">
+                          <span class="badge" x-text="f.agent"></span>
+                          <span class="badge" x-text="f.category"></span>
+                          <span class="badge">confidence <span x-text="f.confidence"></span></span>
+                        </div>
+                        <div class="excerpt" x-show="f.span && f.span.excerpt" x-text="f.span?.excerpt"></div>
+                      </article>
+                    </template>
+                  </div>
+
+                  <!-- Action plan tab -->
+                  <div class="tab-content" x-show="$store.review.tab === 'actions'">
+                    <ol class="action-list">
+                      <template x-for="(item, i) in ($store.review.report.actionPlan || [])" :key="i">
+                        <li x-text="item"></li>
+                      </template>
+                    </ol>
+                  </div>
+
+                  <!-- Agents tab -->
+                  <div class="tab-content" x-show="$store.review.tab === 'agents'">
+                    <template x-for="agent in ($store.review.report.agents || [])" :key="agent.agent">
+                      <div class="agent-card">
+                        <div class="agent-header">
+                          <h4 x-text="agent.agent"></h4>
+                          <span class="badge" x-text="agent.findings?.length + ' findings'"></span>
+                        </div>
+                        <p class="muted" x-text="agent.summary"></p>
+                        <div class="agent-metrics" x-show="agent.metrics && Object.keys(agent.metrics).length > 0">
+                          <template x-for="[k, v] in Object.entries(agent.metrics || {})" :key="k">
+                            <div class="metric-row">
+                              <span x-text="k.replace(/_/g, ' ')"></span>
+                              <strong x-text="typeof v === 'number' ? v.toFixed(1) : v"></strong>
+                            </div>
+                          </template>
+                        </div>
+                        <div class="agent-limitations" x-show="agent.limitations?.length > 0">
+                          <template x-for="(lim, i) in (agent.limitations || [])" :key="i">
+                            <p class="muted small" x-text="lim"></p>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+
+                  <!-- Limitations tab -->
+                  <div class="tab-content" x-show="$store.review.tab === 'limits'">
+                    <ol class="action-list">
+                      <template x-for="(item, i) in ($store.review.report.limitations || [])" :key="i">
+                        <li class="muted" x-text="item"></li>
+                      </template>
+                    </ol>
+                  </div>
+                </div>
+              </template>
+            </section>
+          </div>
+        </div>
+
+        <!-- DOCUMENTS PAGE -->
+        <div x-show="$store.app.page === 'documents'" x-transition:enter="page-enter" class="documents-page">
+          <div class="page-header">
+            <h2>Documents</h2>
+            <button @click="$store.documents.load()">Refresh</button>
+          </div>
+          <div class="document-grid">
+            <template x-if="$store.documents.items.length === 0">
+              <div class="empty-state">
+                <p>No documents yet. Upload a document from the Review page or create one from a template.</p>
+              </div>
+            </template>
+            <template x-for="doc in $store.documents.items" :key="doc.id">
+              <div class="document-card">
+                <div class="doc-icon">
+                  <svg viewBox="0 0 20 20" fill="currentColor" width="24" height="24"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>
+                </div>
+                <div class="doc-info">
+                  <h4 x-text="doc.title"></h4>
+                  <p class="muted small" x-text="'Status: ' + doc.status"></p>
+                  <p class="muted small" x-text="doc.updated_at ? new Date(doc.updated_at).toLocaleDateString() : ''"></p>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- TEMPLATES PAGE -->
+        <div x-show="$store.app.page === 'templates'" x-transition:enter="page-enter" class="templates-page">
+          <div class="page-header">
+            <h2>Document Templates</h2>
+          </div>
+          <div class="template-grid">
+            <template x-for="t in $store.templates.items" :key="t.type">
+              <div class="template-card" @click="$store.templates.preview(t.type)">
+                <h4 x-text="t.name"></h4>
+                <p class="muted" x-text="t.description"></p>
+                <div class="template-meta">
+                  <span class="badge" x-text="t.targetWords + ' words'"></span>
+                  <span class="badge" x-text="t.citationStyle"></span>
+                  <span class="badge" x-text="t.sections.length + ' sections'"></span>
+                </div>
+              </div>
+            </template>
+          </div>
+          <!-- Template preview modal -->
+          <div class="modal-overlay" x-show="$store.templates.previewType" x-transition.opacity @click="$store.templates.previewType = null">
+            <div class="modal" @click.stop>
+              <div class="modal-header">
+                <h3 x-text="$store.templates.previewData?.name || ''"></h3>
+                <button class="icon-btn" @click="$store.templates.previewType = null">&times;</button>
+              </div>
+              <div class="modal-body">
+                <template x-if="$store.templates.previewData">
+                  <div>
+                    <p x-text="$store.templates.previewData.description"></p>
+                    <template x-for="s in $store.templates.previewData.sections" :key="s.name">
+                      <div class="template-section-preview">
+                        <h4 x-text="s.name"></h4>
+                        <p class="muted small" x-text="s.description"></p>
+                        <p class="muted small" x-show="s.guidance" x-text="'Guidance: ' + s.guidance"></p>
+                        <p class="muted small" x-show="s.minWords" x-text="'Target: ' + s.minWords + '+ words'"></p>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+              <div class="modal-footer">
+                <button @click="$store.templates.generateFromPreview()">Generate Template</button>
+                <button class="secondary" @click="$store.templates.previewType = null">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RESEARCH PAGE -->
+        <div x-show="$store.app.page === 'research'" x-transition:enter="page-enter" class="research-page">
+          <div class="page-header">
+            <h2>Research Intelligence</h2>
+          </div>
+          <div class="research-grid">
+            <div class="panel">
+              <h3>Knowledge Graph</h3>
+              <p class="muted">Paste document text to generate a knowledge graph of concepts and relationships.</p>
+              <textarea x-model="$store.research.text" placeholder="Paste text to analyze..." style="min-height:160px"></textarea>
+              <button @click="$store.research.generateGraph()" :disabled="$store.research.busy">Generate Graph</button>
+              <div x-show="$store.research.graph" class="graph-output">
+                <pre x-text="$store.research.graph?.to_mermaid?.() || $store.research.graphMermaid" class="code-block"></pre>
+              </div>
+            </div>
+            <div class="panel">
+              <h3>Citation Manager</h3>
+              <p class="muted">Parse, validate, and convert citations between styles.</p>
+              <textarea x-model="$store.research.citationText" placeholder="Paste a citation..." style="min-height:100px"></textarea>
+              <div class="toolbar">
+                <select x-model="$store.research.citationStyle">
+                  <option value="apa">APA</option>
+                  <option value="mla">MLA</option>
+                  <option value="chicago">Chicago</option>
+                  <option value="harvard">Harvard</option>
+                  <option value="ieee">IEEE</option>
+                  <option value="vancouver">Vancouver</option>
+                </select>
+                <button @click="$store.research.validateCitation()" :disabled="$store.research.busy">Validate</button>
+                <button class="secondary" @click="$store.research.convertCitation()" :disabled="$store.research.busy">Convert</button>
+              </div>
+              <div x-show="$store.research.citationResult" class="result-box">
+                <template x-if="$store.research.citationResult">
+                  <div>
+                    <p x-show="$store.research.citationResult.isValid" class="text-ok">Citation is valid</p>
+                    <template x-if="!$store.research.citationResult.isValid">
+                      <div>
+                        <p class="text-danger">Issues found:</p>
+                        <ul>
+                          <template x-for="issue in $store.research.citationResult.issues" :key="issue">
+                            <li class="muted" x-text="issue"></li>
+                          </template>
+                        </ul>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- COMPARE PAGE -->
+        <div x-show="$store.app.page === 'compare'" x-transition:enter="page-enter" class="compare-page">
+          <div class="page-header">
+            <h2>Document Comparison</h2>
+          </div>
+          <div class="compare-grid">
+            <div class="compare-col">
+              <h3>Original</h3>
+              <textarea x-model="$store.compare.oldText" placeholder="Paste original text..." style="min-height:250px"></textarea>
+            </div>
+            <div class="compare-col">
+              <h3>Modified</h3>
+              <textarea x-model="$store.compare.newText" placeholder="Paste modified text..." style="min-height:250px"></textarea>
+            </div>
+          </div>
+          <div class="toolbar" style="justify-content:center">
+            <button @click="$store.compare.run()" :disabled="$store.compare.busy">Compare Documents</button>
+          </div>
+          <template x-if="$store.compare.result">
+            <div class="compare-result">
+              <div class="compare-stats">
+                <div class="score-tile">
+                  <span>Similarity</span>
+                  <strong x-text="$store.compare.result.similarityScore + '%'"></strong>
+                  <div class="meter"><div class="meter-fill" :style="'width:' + $store.compare.result.similarityScore + '%'"></div></div>
+                </div>
+                <div class="score-tile">
+                  <span>Insertions</span>
+                  <strong x-text="$store.compare.result.insertions"></strong>
+                </div>
+                <div class="score-tile">
+                  <span>Deletions</span>
+                  <strong x-text="$store.compare.result.deletions"></strong>
+                </div>
+                <div class="score-tile">
+                  <span>Old Words</span>
+                  <strong x-text="$store.compare.result.oldWordCount"></strong>
+                </div>
+                <div class="score-tile">
+                  <span>New Words</span>
+                  <strong x-text="$store.compare.result.newWordCount"></strong>
+                </div>
+              </div>
+              <p class="summary" x-text="$store.compare.result.summary"></p>
+              <div class="diff-output">
+                <template x-for="(seg, i) in ($store.compare.result.segments || []).slice(0, 100)" :key="i">
+                  <div class="diff-segment" :class="'diff-' + seg.type">
+                    <span class="diff-type" x-text="seg.type"></span>
+                    <span x-text="seg.old || seg.new"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- AI ASSISTANT PAGE -->
+        <div x-show="$store.app.page === 'assistant'" x-transition:enter="page-enter" class="assistant-page">
+          <div class="assistant-layout">
+            <!-- Chat panel -->
+            <div class="assistant-chat-panel">
+              <div class="panel-head">
+                <div>
+                  <h2>AI Assistant</h2>
+                  <p class="muted" x-text="'Provider: ' + $store.ai.provider + ($store.ai.provider === 'local' ? ' (limited - set API key for full power)' : '')"></p>
+                </div>
+                <div class="toolbar">
+                  <button class="secondary sm" @click="$store.ai.newSession()">New Chat</button>
+                </div>
+              </div>
+
+              <div class="chat-messages" id="chatMessages">
+                <template x-if="$store.ai.messages.length === 0">
+                  <div class="chat-welcome">
+                    <div class="chat-welcome-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </div>
+                    <h3>How can I help?</h3>
+                    <p class="muted">Ask me anything about your documents, writing quality, or review findings.</p>
+                    <div class="chat-suggestions">
+                      <button class="secondary sm" @click="$store.ai.sendQuick('Help me understand my review findings')">Explain review findings</button>
+                      <button class="secondary sm" @click="$store.ai.sendQuick('What are the best practices for citation formatting?')">Citation best practices</button>
+                      <button class="secondary sm" @click="$store.ai.sendQuick('How can I improve the readability of my document?')">Improve readability</button>
+                      <button class="secondary sm" @click="$store.ai.sendQuick('Tell me about AI writing detection')">AI writing analysis</button>
+                    </div>
+                  </div>
+                </template>
+
+                <template x-for="(msg, i) in $store.ai.messages" :key="i">
+                  <div class="chat-message" :class="'chat-' + msg.role">
+                    <div class="chat-avatar" x-text="msg.role === 'user' ? 'You' : 'AI'"></div>
+                    <div class="chat-bubble" x-html="$store.ai.renderMarkdown(msg.content)"></div>
+                  </div>
+                </template>
+
+                <div class="chat-message chat-assistant" x-show="$store.ai.streaming">
+                  <div class="chat-avatar">AI</div>
+                  <div class="chat-bubble chat-thinking">
+                    <span class="thinking-dots">Thinking<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="chat-input-area">
+                <div class="chat-context-bar" x-show="$store.review.text && !$store.ai.documentAttached">
+                  <button class="secondary sm" @click="$store.ai.attachDocument()">
+                    Attach current document to chat
+                  </button>
+                </div>
+                <div class="chat-context-bar" x-show="$store.ai.documentAttached">
+                  <span class="badge" x-text="'Context: ' + ($store.ai.documentName || 'current document')"></span>
+                  <button class="secondary sm" @click="$store.ai.detachDocument()">Remove</button>
+                </div>
+                <form class="chat-input-form" @submit.prevent="$store.ai.sendMessage()">
+                  <textarea x-model="$store.ai.input"
+                            @keydown.enter.prevent="if(!$event.shiftKey) $store.ai.sendMessage()"
+                            placeholder="Ask me anything... (Enter to send, Shift+Enter for new line)"
+                            rows="1"
+                            :disabled="$store.ai.streaming"></textarea>
+                  <button type="submit" :disabled="!$store.ai.input.trim() || $store.ai.streaming">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg>
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <!-- Sidebar info -->
+            <div class="assistant-sidebar">
+              <div class="panel">
+                <h3>Capabilities</h3>
+                <ul class="assistant-cap-list">
+                  <li>Document analysis & review interpretation</li>
+                  <li>Grammar, style, and tone advice</li>
+                  <li>Citation formatting guidance</li>
+                  <li>Readability improvement tips</li>
+                  <li>Accessibility compliance help</li>
+                  <li>AI-writing analysis explanation</li>
+                  <li>Writing best practices</li>
+                </ul>
+              </div>
+              <div class="panel">
+                <h3>Provider Status</h3>
+                <div class="provider-status">
+                  <div class="provider-row">
+                    <span>OpenAI (GPT-4o)</span>
+                    <span class="badge" :class="$store.ai.providers.openai?.configured ? 'badge-low' : 'badge-info'"
+                          x-text="$store.ai.providers.openai?.configured ? 'Configured' : 'Not set'"></span>
+                  </div>
+                  <div class="provider-row">
+                    <span>Anthropic (Claude)</span>
+                    <span class="badge" :class="$store.ai.providers.anthropic?.configured ? 'badge-low' : 'badge-info'"
+                          x-text="$store.ai.providers.anthropic?.configured ? 'Configured' : 'Not set'"></span>
+                  </div>
+                  <div class="provider-row">
+                    <span x-text="$store.ai.providers.custom?.model || 'Custom API'"></span>
+                    <span class="badge" :class="$store.ai.providers.custom?.configured ? 'badge-low' : 'badge-info'"
+                          x-text="$store.ai.providers.custom?.configured ? 'Active' : 'Not set'"></span>
+                  </div>
+                  <div class="provider-row">
+                    <span>Local Mode</span>
+                    <span class="badge badge-info">Fallback</span>
+                  </div>
+                </div>
+                <p class="muted small" style="margin-top:8px">
+                  Set <code>HP_OPENAI_API_KEY</code> or <code>HP_ANTHROPIC_API_KEY</code> environment variables to enable full AI chat.
+                </p>
+              </div>
+              <div class="panel">
+                <h3>Tips</h3>
+                <ul class="assistant-tips">
+                  <li>Load a document in Review first, then attach it here for context-aware answers</li>
+                  <li>Press Enter to send, Shift+Enter for new lines</li>
+                  <li>Ask about any review finding to get detailed explanations</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Auth screens -->
+  <div class="auth-wrapper" x-show="!$store.auth.loggedIn">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-icon large">HP</div>
+        <h1>HumanProof AI</h1>
+        <p class="muted">Document Intelligence Platform</p>
+      </div>
+
+      <!-- Login form -->
+      <div x-show="$store.auth.mode === 'login'">
+        <h2>Sign In</h2>
+        <form @submit.prevent="$store.auth.login()">
+          <label class="field">
+            <span>Email</span>
+            <input type="email" x-model="$store.auth.email" required autocomplete="email">
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input type="password" x-model="$store.auth.password" required autocomplete="current-password">
+          </label>
+          <label class="field">
+            <span>Organization ID</span>
+            <input type="text" x-model="$store.auth.orgId" placeholder="Leave blank for default">
+          </label>
+          <p class="text-danger" x-show="$store.auth.error" x-text="$store.auth.error"></p>
+          <button type="submit" :disabled="$store.auth.busy" style="width:100%">
+            <span x-show="!$store.auth.busy">Sign In</span>
+            <span x-show="$store.auth.busy">Signing in...</span>
+          </button>
+          <p class="auth-switch">No account? <a href="#" @click.prevent="$store.auth.mode = 'register'">Create one</a></p>
+          <p class="auth-switch"><a href="#" @click.prevent="$store.auth.skipAuth()">Continue without account</a></p>
+        </form>
+      </div>
+
+      <!-- Register form -->
+      <div x-show="$store.auth.mode === 'register'">
+        <h2>Create Account</h2>
+        <form @submit.prevent="$store.auth.register()">
+          <label class="field">
+            <span>Display Name</span>
+            <input type="text" x-model="$store.auth.displayName" required>
+          </label>
+          <label class="field">
+            <span>Email</span>
+            <input type="email" x-model="$store.auth.email" required autocomplete="email">
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input type="password" x-model="$store.auth.password" required minlength="8" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>Organization Name</span>
+            <input type="text" x-model="$store.auth.orgName" placeholder="Your organization">
+          </label>
+          <p class="text-danger" x-show="$store.auth.error" x-text="$store.auth.error"></p>
+          <button type="submit" :disabled="$store.auth.busy" style="width:100%">
+            <span x-show="!$store.auth.busy">Create Account</span>
+            <span x-show="$store.auth.busy">Creating...</span>
+          </button>
+          <p class="auth-switch">Already have an account? <a href="#" @click.prevent="$store.auth.mode = 'login'">Sign in</a></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

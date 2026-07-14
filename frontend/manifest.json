@@ -1,0 +1,45 @@
+{
+  "name": "HumanProof AI",
+  "short_name": "HumanProof",
+  "description": "Document intelligence platform for writing review, AI-writing analysis, and publication readiness.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f1216",
+  "theme_color": "#0e6e82",
+  "scope": "/",
+  "categories": ["productivity", "business", "education"],
+  "lang": "en",
+  "dir": "ltr",
+  "id": "/",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Run Review",
+      "short_name": "Review",
+      "url": "/?shortcut=review",
+      "description": "Open the document review workspace"
+    },
+    {
+      "name": "AI Assistant",
+      "short_name": "AI Chat",
+      "url": "/?shortcut=assistant",
+      "description": "Open the AI assistant chat"
+    }
+  ]
+}
