@@ -159,15 +159,8 @@ document.addEventListener("alpine:init", () => {
       window.addEventListener("resize", () => {
         if (window.innerWidth < 768) this.sidebarCollapsed = true;
       });
-      this._watchApiBase();
-    },
-
-    _watchApiBase() {
-      let current = this.apiBase;
-      Object.defineProperty(this, "apiBase", {
-        get() { return current; },
-        set(v) { current = v; localStorage.setItem("hp_api_base", v); },
-      });
+      // Persist apiBase changes to localStorage
+      // apiBase persisted via @change handler on the input element
     },
 
     navigate(page) {
@@ -327,7 +320,7 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `humanproof-report.${format}`;
+        a.download = `mr-money-ai-report.${format}`;
         a.click();
         URL.revokeObjectURL(url);
       } catch (e) {

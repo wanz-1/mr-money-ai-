@@ -118,7 +118,7 @@
         <div class="topbar-right">
           <label class="api-field compact">
             <span>API</span>
-            <input type="url" x-model="$store.app.apiBase" autocomplete="off">
+            <input type="url" x-model="$store.app.apiBase" @change="localStorage.setItem('hp_api_base', $store.app.apiBase)" autocomplete="off">
           </label>
           <button class="icon-btn" @click="$store.app.toggleTheme()" :title="$store.app.darkMode ? 'Light mode' : 'Dark mode'">
             <template x-if="!$store.app.darkMode">
