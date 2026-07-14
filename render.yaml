@@ -2,7 +2,7 @@ services:
   - type: web
     name: humanproof-ai
     runtime: python
-    buildCommand: pip install .
+    buildCommand: pip install -r requirements.txt
     startCommand: python -m backend.humanproof.server --host 0.0.0.0 --port $PORT
     envVars:
       - key: HP_AI_PROVIDER
