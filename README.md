@@ -1,52 +1,56 @@
 # HumanProof AI
 
-HumanProof AI is a local-first document intelligence platform for professional writing review, transparent AI-writing analysis, citation checks, similarity review, fact-checking support, accessibility review, compliance triage, and publication readiness reporting.
+HumanProof AI is a cloud-deployable AI Document Intelligence Platform for professional writing review, transparent AI-writing analysis, citation checks, similarity review, fact-checking support, accessibility review, compliance triage, and publication readiness reporting.
 
-This repository contains a working foundation:
+**Live:** https://mr-money-ai.onrender.com
 
-- Python standard-library backend and orchestration engine
-- Specialized review agents for grammar, readability, structure, similarity, citation, fact-checking, tone, authorship consistency, accessibility, compliance, and security
-- Best-effort extraction for TXT, Markdown, HTML, JSON, XML, CSV, RTF, DOCX, ODT, EPUB, XLSX, PPTX, and lightweight PDF text parsing
-- Static responsive frontend for uploads, dashboards, findings, action plans, and report downloads
-- Report exports for JSON, Markdown, HTML, DOCX, and PDF
-- Database schema, API docs, deployment scripts, CI, and operational documentation
+## Features
+
+- **17 Specialized AI Agents** — Grammar, Readability, Structure, Similarity, Citation, Fact-Checking, AI Writing Analysis, Tone, Authorship Consistency, Accessibility, Compliance, Security, Argument Strength, Sentence Variety, Vocabulary Richness, Paragraph Balance, PII Detection
+- **Explainable Scoring** — Every score includes AI-generated explanations, evidence, and confidence levels
+- **SSE Streaming AI Chat** — Real-time token-by-token AI responses with document context
+- **Image Generation** — `/imagine` or `/image` commands in the AI assistant
+- **Document Templates** — 8 built-in templates (Research Paper, Thesis, Grant Proposal, Business Plan, etc.)
+- **Document Comparison** — Side-by-side diff with similarity scoring
+- **Auto-Formatting** — Automatic text cleanup and formatting
+- **Text Humanization** — Rule-based writing improvements preserving meaning
+- **13 Format Support** — TXT, MD, HTML, JSON, XML, CSV, LaTeX, RTF, DOCX, ODT, EPUB, XLSX, PPTX, PDF
+- **Report Exports** — PDF, DOCX, HTML, Markdown
+- **Auth & RBAC** — JWT authentication, 15 permissions, 5 roles
+- **PWA** — Installable progressive web app with offline support
+- **Dark Mode** — System preference detection + manual toggle
 
 ## Quick Start
 
-Run the automated tests:
-
 ```powershell
+# Run tests
 powershell -ExecutionPolicy Bypass -File .\scripts\run_tests.ps1
-```
 
-Start the local web application:
-
-```powershell
+# Start server
 powershell -ExecutionPolicy Bypass -File .\scripts\start_backend.ps1
+
+# Open http://127.0.0.1:8765
 ```
 
-Open:
+## Deploy to Render (Free)
 
-```text
-http://127.0.0.1:8765
-```
-
-Review a document from the CLI:
-
-```powershell
-uv run --no-project python -m backend.humanproof.cli path\to\document.md --format pdf
-```
+1. Push to GitHub
+2. Go to https://dashboard.render.com/new
+3. Connect repo, set build command: `pip install -r requirements.txt`
+4. Set start command: `python -m backend.humanproof.server --host 0.0.0.0 --port $PORT`
+5. Add env vars: `HP_AI_PROVIDER=custom`, `HP_CUSTOM_API_BASE=https://aimodelapi.onrender.com/v1`, `HP_CUSTOM_API_KEY=your-key`, `HP_CUSTOM_MODEL=dev-x`
+6. Deploy
 
 ## Project Layout
 
 ```text
-backend/humanproof/       Core analyzers, orchestration, API server, report exporters
-frontend/                 Static browser application
-database/schema.sql       Enterprise relational schema
+backend/humanproof/       Core analyzers, orchestration, API server, AI assistant, report exporters
+frontend/                 Static Alpine.js SPA with PWA support
+database/schema.sql       Enterprise PostgreSQL schema (17 tables, 14 indexes)
 deploy/                   Docker and Compose deployment assets
-docs/                     User, admin, developer, API, security, and maintenance docs
 scripts/                  Local helper scripts
-tests/                    Standard-library test suite
+tests/                    Test suite
+android/                  Android TWA wrapper for Play Store
 ```
 
 ## Integrity Position

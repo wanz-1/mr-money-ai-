@@ -29,12 +29,13 @@ def review_document(document: Document) -> ReviewReport:
         reverse=True,
     )
     scores = _build_scores(agent_results, findings, document)
+    score_explanations = _build_score_explanations(scores, agent_results, findings, document)
     limitations = _merge_limitations(document.limitations, agent_results)
     summary = _summary(scores, findings, document)
     action_plan = _action_plan(findings)
     review_id = str(uuid.uuid4())
     created_at = utc_now()
-    return ReviewReport(
+    report = ReviewReport(
         review_id=review_id,
         created_at=created_at,
         document=document.metadata,
@@ -52,6 +53,8 @@ def review_document(document: Document) -> ReviewReport:
             }
         ],
     )
+    report.score_explanations = score_explanations
+    return report
 
 
 def _merge_limitations(document_limitations: Iterable[str], agent_results: Iterable[AgentResult]) -> List[str]:
@@ -144,4 +147,75 @@ def _action_plan(findings: List[Finding]) -> List[str]:
         if item not in plan:
             plan.append(item)
     return plan
+
+
+def _build_score_explanations(
+    scores: Dict[str, float],
+    agent_results: List[AgentResult],
+    findings: List[Finding],
+    document: Document,
+) -> Dict[str, Dict[str, object]]:
+    """Generate explainable AI explanations for every score."""
+    explanations: Dict[str, Dict[str, object]] = {}
+
+    score_configs = {
+        "publication_readiness": {
+            "label": "Publication Readiness",
+            "factors": ["writing_quality", "citation", "accessibility", "compliance", "security", "fact_checking"],
+        },
+        "writing_quality": {
+            "label": "Writing Quality",
+            "factors": ["grammar", "readability", "sentence_variety", "vocabulary_richness"],
+        },
+        "grammar": {"label": "Grammar", "factors": []},
+        "readability": {"label": "Readability", "factors": []},
+        "originality": {"label": "Originality", "factors": []},
+        "citation": {"label": "Citation Quality", "factors": []},
+        "accessibility": {"label": "Accessibility", "factors": []},
+        "compliance": {"label": "Compliance", "factors": []},
+        "security": {"label": "Security", "factors": []},
+        "fact_checking": {"label": "Fact Verification", "factors": []},
+        "ai_writing_indicator": {"label": "AI Writing Probability", "factors": []},
+        "argument_strength_score": {"label": "Argument Strength", "factors": []},
+        "sentence_variety_score": {"label": "Sentence Variety", "factors": []},
+        "vocabulary_richness_score": {"label": "Vocabulary Richness", "factors": []},
+        "paragraph_balance_score": {"label": "Paragraph Balance", "factors": []},
+    }
+
+    for key, value in scores.items():
+        config = score_configs.get(key, {"label": key.replace("_", " ").title(), "factors": []})
+        score_findings = [f for f in findings if f.category in key or key in f.category]
+
+        if value >= 85:
+            assessment = "Excellent"
+            explanation = f"This score indicates strong performance. "
+        elif value >= 70:
+            assessment = "Good"
+            explanation = f"Acceptable quality with room for improvement. "
+        elif value >= 50:
+            assessment = "Needs Work"
+            explanation = f"Significant improvements recommended before publication. "
+        else:
+            assessment = "Poor"
+            explanation = f"Critical issues found that require immediate attention. "
+
+        if score_findings:
+            top_finding = score_findings[0]
+            explanation += f"Top issue: {top_finding.title}. {top_finding.recommendation}"
+
+        evidence_agents = [r for r in agent_results if any(
+            k in r.metrics for k in [key, key.replace("_score", "")]
+        )]
+        agent_evidence = [f"{r.agent}: {r.summary}" for r in evidence_agents[:2]]
+
+        explanations[key] = {
+            "score": value,
+            "assessment": assessment,
+            "explanation": explanation.strip(),
+            "evidence": agent_evidence,
+            "findingCount": len(score_findings),
+            "confidence": 0.80 if len(findings) > 3 else 0.70,
+        }
+
+    return explanations
 

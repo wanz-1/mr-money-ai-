@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" x-data x-init="$store.app.init()">
+<html lang="en" x-data x-init="$store.app.init()" :class="{ 'dark': $store.app.darkMode }">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -20,7 +20,8 @@
     }
   </script>
 </head>
-<body :class="{ 'dark': $store.app.darkMode }">
+<body>
+<a href="#main-content" class="skip-link">Skip to content</a>
 
   <!-- Keyboard shortcuts overlay -->
   <div class="shortcuts-overlay" x-show="$store.shortcuts.show" x-transition.opacity @click="$store.shortcuts.show = false" @keydown.escape.window="$store.shortcuts.show = false">
@@ -39,7 +40,7 @@
   </div>
 
   <!-- Toast notifications -->
-  <div class="toast-container">
+  <div class="toast-container" aria-live="polite" aria-atomic="true">
     <template x-for="t in $store.toast.items" :key="t.id">
       <div class="toast" :class="'toast-' + t.type" x-show="t.visible" x-transition
            x-init="setTimeout(() => $store.toast.dismiss(t.id), 4000)">
@@ -51,7 +52,7 @@
   <!-- App shell -->
   <div class="app-layout" x-show="$store.auth.loggedIn">
     <!-- Sidebar -->
-    <nav class="sidebar" :class="{ 'sidebar-collapsed': $store.app.sidebarCollapsed }">
+    <nav class="sidebar" :class="{ 'sidebar-collapsed': $store.app.sidebarCollapsed }" role="navigation" aria-label="Main navigation">
       <div class="sidebar-brand">
         <div class="brand-icon">HP</div>
         <span class="brand-text" x-show="!$store.app.sidebarCollapsed">HumanProof AI</span>
@@ -91,11 +92,11 @@
       </div>
 
       <div class="sidebar-footer">
-        <a class="nav-item" @click.prevent="$store.app.sidebarCollapsed = !$store.app.sidebarCollapsed" href="#">
+        <a class="nav-item" @click.prevent="$store.app.sidebarCollapsed = !$store.app.sidebarCollapsed" href="#" aria-label="Toggle sidebar">
           <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
           <span x-show="!$store.app.sidebarCollapsed">Collapse</span>
         </a>
-        <a class="nav-item" @click.prevent="$store.shortcuts.show = true" href="#">
+        <a class="nav-item" @click.prevent="$store.shortcuts.show = true" href="#" aria-label="Keyboard shortcuts">
           <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
           <span x-show="!$store.app.sidebarCollapsed">Shortcuts</span>
         </a>
@@ -141,7 +142,7 @@
       </header>
 
       <!-- Page content -->
-      <main class="page-content">
+      <main class="page-content" id="main-content">
 
         <!-- REVIEW PAGE -->
         <div x-show="$store.app.page === 'review'" x-transition:enter="page-enter" class="review-page">
@@ -230,17 +231,17 @@
                   </div>
 
                   <!-- Tabs -->
-                  <div class="tabs">
-                    <button class="tab" :class="{ active: $store.review.tab === 'findings' }" @click="$store.review.tab = 'findings'">
+                  <div class="tabs" role="tablist" aria-label="Review results">
+                    <button class="tab" role="tab" :aria-selected="$store.review.tab === 'findings'" :class="{ active: $store.review.tab === 'findings' }" @click="$store.review.tab = 'findings'">
                       Findings <span class="tab-count" x-text="'(' + $store.review.filteredFindings().length + ')'"></span>
                     </button>
-                    <button class="tab" :class="{ active: $store.review.tab === 'actions' }" @click="$store.review.tab = 'actions'">
+                    <button class="tab" role="tab" :aria-selected="$store.review.tab === 'actions'" :class="{ active: $store.review.tab === 'actions' }" @click="$store.review.tab = 'actions'">
                       Action Plan
                     </button>
-                    <button class="tab" :class="{ active: $store.review.tab === 'agents' }" @click="$store.review.tab = 'agents'">
+                    <button class="tab" role="tab" :aria-selected="$store.review.tab === 'agents'" :class="{ active: $store.review.tab === 'agents' }" @click="$store.review.tab = 'agents'">
                       Agents
                     </button>
-                    <button class="tab" :class="{ active: $store.review.tab === 'limits' }" @click="$store.review.tab = 'limits'">
+                    <button class="tab" role="tab" :aria-selected="$store.review.tab === 'limits'" :class="{ active: $store.review.tab === 'limits' }" @click="$store.review.tab = 'limits'">
                       Limits
                     </button>
                   </div>
@@ -343,7 +344,12 @@
             <button @click="$store.documents.load()">Refresh</button>
           </div>
           <div class="document-grid">
-            <template x-if="$store.documents.items.length === 0">
+            <template x-if="$store.documents.busy">
+              <div class="loading-skeleton">
+                <div class="skeleton-card" x-for="i in 4" :key="i"></div>
+              </div>
+            </template>
+            <template x-if="!$store.documents.busy && $store.documents.items.length === 0">
               <div class="empty-state">
                 <p>No documents yet. Upload a document from the Review page or create one from a template.</p>
               </div>

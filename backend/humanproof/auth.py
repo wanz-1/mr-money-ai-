@@ -21,10 +21,19 @@ except ImportError:
     _jwt = None  # type: ignore[assignment]
 
 
-JWT_SECRET = os.environ.get("HP_JWT_SECRET", secrets.token_hex(32))
+JWT_SECRET = os.environ.get("HP_JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_SECONDS = int(os.environ.get("HP_JWT_EXPIRY", "3600"))
 JWT_REFRESH_EXPIRY_SECONDS = int(os.environ.get("HP_JWT_REFRESH_EXPIRY", "86400"))
+
+if not JWT_SECRET:
+    import logging as _log
+    _log.warning(
+        "HP_JWT_SECRET is not set. Generating a random secret. "
+        "All tokens will be invalidated on restart. "
+        "Set HP_JWT_SECRET in your environment for stable tokens."
+    )
+    JWT_SECRET = secrets.token_hex(32)
 
 
 # ---------------------------------------------------------------------------

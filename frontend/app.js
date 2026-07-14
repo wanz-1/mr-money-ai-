@@ -150,7 +150,12 @@ document.addEventListener("alpine:init", () => {
 
     init() {
       Alpine.store("auth").init();
-      if (this.darkMode) document.documentElement.classList.add("dark");
+      if (this.darkMode) {
+        document.documentElement.classList.add("dark");
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        this.darkMode = true;
+        document.documentElement.classList.add("dark");
+      }
       window.addEventListener("resize", () => {
         if (window.innerWidth < 768) this.sidebarCollapsed = true;
       });
@@ -640,9 +645,11 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
         if (data.error) {
           this.messages.push({ role: "assistant", content: "Image generation error: " + data.error });
         } else if (data.images && data.images.length > 0) {
-          const imgHtml = data.images.map(img =>
-            `<img src="${img.url}" alt="Generated image" style="max-width:100%;border-radius:8px;margin:8px 0" loading="lazy">`
-          ).join("");
+          const imgHtml = data.images.map(img => {
+            const url = img.url || "";
+            if (!url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("data:")) return "";
+            return `<img src="${url.replace(/"/g, "&quot;")}" alt="Generated image" style="max-width:100%;border-radius:8px;margin:8px 0" loading="lazy">`;
+          }).join("");
           this.messages.push({ role: "assistant", content: imgHtml });
         } else {
           this.messages.push({ role: "assistant", content: "No images were generated." });
@@ -657,7 +664,7 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
 
     renderMarkdown(text) {
       if (!text) return "";
-      return text
+      let s = text
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -668,10 +675,11 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
         .replace(/^## (.+)$/gm, "<h3>$1</h3>")
         .replace(/^# (.+)$/gm, "<h2>$1</h2>")
         .replace(/^- (.+)$/gm, "<li>$1</li>")
-        .replace(/(<li>.*<\/li>\n?)+/g, (match) => "<ul>" + match + "</ul>")
+        .replace(/(<li>[\s\S]*?<\/li>\n?)+/g, (m) => "<ul>" + m + "</ul>")
         .replace(/^\d+\. (.+)$/gm, "<li>$1</li>")
         .replace(/\n{2,}/g, "<br><br>")
         .replace(/\n/g, "<br>");
+      return s;
     },
 
     _scrollToBottom() {

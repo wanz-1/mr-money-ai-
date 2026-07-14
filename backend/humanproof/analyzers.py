@@ -765,6 +765,308 @@ class ComplianceSecurityAgent:
         )
 
 
+class ArgumentStrengthAgent:
+    name = "Argument Strength Agent"
+
+    def analyze(self, document: Document) -> AgentResult:
+        text = document.text
+        findings: List[Finding] = []
+        paras = paragraphs(text)
+
+        vague_words = ["things", "stuff", "a lot", "very", "really", "quite", "somewhat", "maybe", "perhaps", "might"]
+        for para in paras:
+            for vw in vague_words:
+                count = len(re.findall(r"\b" + vw + r"\b", para, re.I))
+                if count > 1:
+                    span = span_for(text, para[:120])
+                    findings.append(Finding(
+                        category="argument_strength",
+                        severity="medium",
+                        title=f"Vague language: '{vw}' repeated {count} times",
+                        message=f"This paragraph uses the vague term '{vw}' multiple times, weakening the argument.",
+                        recommendation=f"Replace '{vw}' with specific data, numbers, or concrete examples.",
+                        confidence=0.80,
+                        agent=self.name,
+                        span=span,
+                    ))
+
+        claim_words = ["demonstrates", "proves", "shows", "confirms", "establishes", "verifies"]
+        evidence_words = ["study", "research", "data", "evidence", "finding", "result", "survey", "trial"]
+        for para in paras:
+            has_claim = any(w in para.lower() for w in claim_words)
+            has_evidence = any(w in para.lower() for w in evidence_words)
+            if has_claim and not has_evidence and len(words(para)) > 30:
+                span = span_for(text, para[:120])
+                findings.append(Finding(
+                    category="argument_strength",
+                    severity="medium",
+                    title="Claim without supporting evidence",
+                    message="A paragraph makes a strong claim but does not reference supporting evidence.",
+                    recommendation="Add citations, data, or references to substantiate the claim.",
+                    confidence=0.72,
+                    agent=self.name,
+                    span=span,
+                ))
+
+        strength_score = clamp(100 - sum(severity_weight(f.severity) * 5 for f in findings))
+        return AgentResult(
+            agent=self.name,
+            summary="Assessed argument strength, vague language, and evidence backing.",
+            metrics={"argument_strength_score": strength_score},
+            findings=findings,
+            limitations=["Argument quality assessment is heuristic-based and may miss domain-specific nuances."],
+        )
+
+
+class SentenceVarietyAgent:
+    name = "Sentence Variety Agent"
+
+    def analyze(self, document: Document) -> AgentResult:
+        text = document.text
+        findings: List[Finding] = []
+        sents = sentences(text)
+        if len(sents) < 5:
+            return AgentResult(agent=self.name, summary="Not enough sentences for variety analysis.", metrics={}, findings=[])
+
+        lengths = [len(words(s)) for s in sents]
+        avg_len = mean(lengths)
+        std = pstdev(lengths) if len(lengths) > 1 else 0
+
+        if std < 3:
+            findings.append(Finding(
+                category="sentence_variety",
+                severity="low",
+                title="Low sentence length variation",
+                message=f"Standard deviation of sentence length is {std:.1f} words, suggesting monotonous rhythm.",
+                recommendation="Mix short punchy sentences with longer complex ones for better readability.",
+                confidence=0.85,
+                agent=self.name,
+            ))
+
+        start_words = [s.strip().split()[0].lower() if s.strip().split() else "" for s in sents]
+        start_counts = Counter(start_words)
+        for word, count in start_counts.most_common(5):
+            if count >= 4 and count / len(sents) > 0.25:
+                findings.append(Finding(
+                    category="sentence_variety",
+                    severity="low",
+                    title=f"Repetitive sentence starts: '{word}'",
+                    message=f"{count} sentences start with '{word}', reducing readability.",
+                    recommendation="Vary sentence openings using different parts of speech or transitional phrases.",
+                    confidence=0.88,
+                    agent=self.name,
+                ))
+
+        variety_score = clamp(100 - sum(severity_weight(f.severity) * 4 for f in findings))
+        return AgentResult(
+            agent=self.name,
+            summary="Analyzed sentence length variation and opening patterns.",
+            metrics={"sentence_variety_score": variety_score, "avg_sentence_length": round(avg_len, 1)},
+            findings=findings,
+            limitations=[],
+        )
+
+
+class VocabularyRichnessAgent:
+    name = "Vocabulary Richness Agent"
+
+    def analyze(self, document: Document) -> AgentResult:
+        text = document.text
+        findings: List[Finding] = []
+        all_words = lower_words(text)
+        if len(all_words) < 50:
+            return AgentResult(agent=self.name, summary="Not enough words for vocabulary analysis.", metrics={}, findings=[])
+
+        unique = set(all_words)
+        ttr = len(unique) / len(all_words)
+        if ttr < 0.4:
+            findings.append(Finding(
+                category="vocabulary",
+                severity="medium",
+                title="Low vocabulary diversity",
+                message=f"Type-token ratio is {ttr:.2f} (unique words / total words), indicating repetitive vocabulary.",
+                recommendation="Use synonyms, varied phrasing, and domain-specific terminology to enrich the text.",
+                confidence=0.82,
+                agent=self.name,
+            ))
+
+        word_freq = Counter(all_words)
+        top重复 = [(w, c) for w, c in word_freq.most_common(20) if len(w) > 3 and c > len(all_words) * 0.03]
+        for word, count in top重复[:3]:
+            findings.append(Finding(
+                category="vocabulary",
+                severity="info",
+                title=f"High-frequency word: '{word}' ({count}x)",
+                message=f"The word '{word}' appears {count} times ({count*100/len(all_words):.1f}% of text).",
+                recommendation=f"Consider substituting '{word}' with synonyms in some instances.",
+                confidence=0.90,
+                agent=self.name,
+            ))
+
+        richness_score = clamp(ttr * 200)
+        return AgentResult(
+            agent=self.name,
+            summary=f"Vocabulary diversity (TTR): {ttr:.2f}. {'Good variety.' if ttr > 0.55 else 'Consider enriching vocabulary.'}",
+            metrics={"vocabulary_richness_score": richness_score, "type_token_ratio": round(ttr, 3)},
+            findings=findings,
+            limitations=["TTR is sensitive to document length; short texts naturally have lower diversity."],
+        )
+
+
+class ParagraphBalanceAgent:
+    name = "Paragraph Balance Agent"
+
+    def analyze(self, document: Document) -> AgentResult:
+        text = document.text
+        findings: List[Finding] = []
+        paras = paragraphs(text)
+        if len(paras) < 2:
+            return AgentResult(agent=self.name, summary="Not enough paragraphs for balance analysis.", metrics={}, findings=[])
+
+        para_lengths = [len(words(p)) for p in paras]
+        avg = mean(para_lengths)
+
+        for i, (para, plen) in enumerate(zip(paras, para_lengths)):
+            if plen > avg * 3 and plen > 100:
+                span = span_for(text, para[:100])
+                findings.append(Finding(
+                    category="paragraph_balance",
+                    severity="low",
+                    title=f"Very long paragraph ({plen} words)",
+                    message=f"Paragraph {i+1} is {plen} words, over 3x the average ({avg:.0f}).",
+                    recommendation="Break into smaller paragraphs with clear topic sentences.",
+                    confidence=0.90,
+                    agent=self.name,
+                    span=span,
+                ))
+            elif plen < 15 and i > 0 and i < len(paras) - 1:
+                findings.append(Finding(
+                    category="paragraph_balance",
+                    severity="info",
+                    title=f"Very short paragraph ({plen} words)",
+                    message=f"Paragraph {i+1} has only {plen} words. Consider merging with adjacent paragraphs.",
+                    recommendation="Combine short paragraphs or expand with supporting details.",
+                    confidence=0.70,
+                    agent=self.name,
+                ))
+
+        balance_score = clamp(100 - sum(severity_weight(f.severity) * 3 for f in findings))
+        return AgentResult(
+            agent=self.name,
+            summary=f"Analyzed {len(paras)} paragraphs. Average length: {avg:.0f} words.",
+            metrics={"paragraph_balance_score": balance_score, "avg_paragraph_length": round(avg, 1)},
+            findings=findings,
+            limitations=[],
+        )
+
+
+class PIIDetectionAgent:
+    name = "PII Detection Agent"
+
+    EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+    PHONE_RE = re.compile(r"(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}")
+    SSN_RE = re.compile(r"\b\d{3}[-.\s]?\d{2}[-.\s]?\d{4}\b")
+    IP_RE = re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
+
+    def analyze(self, document: Document) -> AgentResult:
+        text = document.text
+        findings: List[Finding] = []
+
+        for match in self.EMAIL_RE.finditer(text):
+            email = match.group()
+            if not email.endswith((".com", ".org", ".edu", ".gov", ".net", ".io")):
+                span = span_for(text, email)
+                findings.append(Finding(
+                    category="pii",
+                    severity="medium",
+                    title="Email address detected",
+                    message=f"Found email address: {email}",
+                    recommendation="Verify this is intentional contact information and not personal data requiring protection.",
+                    confidence=0.95,
+                    agent=self.name,
+                    span=span,
+                ))
+
+        for match in self.PHONE_RE.finditer(text):
+            phone = match.group()
+            span = span_for(text, phone)
+            findings.append(Finding(
+                category="pii",
+                severity="medium",
+                title="Phone number detected",
+                message=f"Found phone number: {phone}",
+                recommendation="Ensure this is necessary contact information and comply with privacy policies.",
+                confidence=0.85,
+                agent=self.name,
+                span=span,
+            ))
+
+        for match in self.SSN_RE.finditer(text):
+            ssn = match.group()
+            span = span_for(text, ssn)
+            findings.append(Finding(
+                category="pii",
+                severity="critical",
+                title="Potential SSN detected",
+                message="A 9-digit number pattern resembling a Social Security Number was found.",
+                recommendation="IMMEDIATELY remove or redact this number. SSNs should never appear in shared documents.",
+                confidence=0.60,
+                agent=self.name,
+                span=span,
+            ))
+
+        pii_score = clamp(100 - sum(severity_weight(f.severity) * 8 for f in findings))
+        return AgentResult(
+            agent=self.name,
+            summary=f"Scanned for PII patterns. Found {len(findings)} potential exposure(s).",
+            metrics={"pii_score": pii_score},
+            findings=findings,
+            limitations=["Pattern-based detection may produce false positives. Manual review recommended for high-severity findings."],
+        )
+
+
+class DocumentClassificationAgent:
+    name = "Document Classification Agent"
+
+    def analyze(self, document: Document) -> AgentResult:
+        text = document.text
+        findings: List[Finding] = []
+        word_list = lower_words(text)
+        word_count = len(word_list)
+
+        academic_signals = ["abstract", "methodology", "hypothesis", "literature review", "references", "doi", "et al.", "journal"]
+        business_signals = ["executive summary", "quarterly", "revenue", "stakeholder", "roi", "budget", "deliverable"]
+        technical_signals = ["architecture", "api", "implementation", "deployment", "algorithm", "database", "endpoint"]
+        legal_signals = ["hereby", "whereas", "pursuant to", "notwithstanding", "shall", "party", "agreement"]
+
+        signals = {
+            "academic": sum(1 for s in academic_signals if s in text.lower()),
+            "business": sum(1 for s in business_signals if s in text.lower()),
+            "technical": sum(1 for s in technical_signals if s in text.lower()),
+            "legal": sum(1 for s in legal_signals if s in text.lower()),
+        }
+        doc_type = max(signals, key=signals.get) if max(signals.values()) > 0 else "general"
+
+        findings.append(Finding(
+            category="classification",
+            severity="info",
+            title=f"Document type: {doc_type.title()}",
+            message=f"Detected {doc_type} writing style based on vocabulary and structure signals.",
+            recommendation=f"Ensure the document follows {doc_type}-specific formatting and conventions.",
+            confidence=0.75,
+            agent=self.name,
+            evidence={"signals": signals, "word_count": word_count},
+        ))
+
+        return AgentResult(
+            agent=self.name,
+            summary=f"Classified as {doc_type} document ({word_count} words).",
+            metrics={"document_type_confidence": signals.get(doc_type, 0) * 25},
+            findings=findings,
+            limitations=["Classification is heuristic-based. Complex documents may blend multiple types."],
+        )
+
+
 AGENTS = [
     GrammarAgent(),
     ReadabilityAgent(),
@@ -777,5 +1079,11 @@ AGENTS = [
     AuthorshipConsistencyAgent(),
     AccessibilityAgent(),
     ComplianceSecurityAgent(),
+    ArgumentStrengthAgent(),
+    SentenceVarietyAgent(),
+    VocabularyRichnessAgent(),
+    ParagraphBalanceAgent(),
+    PIIDetectionAgent(),
+    DocumentClassificationAgent(),
 ]
 

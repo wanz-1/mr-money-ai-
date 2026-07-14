@@ -40,8 +40,22 @@ def get_client_ip(handler: BaseHTTPRequestHandler) -> str:
     return handler.client_address[0] if handler.client_address else "unknown"
 
 
+_ALLOWED_ORIGINS: List[str] = []
+
+
+def set_allowed_origins(origins: List[str]) -> None:
+    global _ALLOWED_ORIGINS
+    _ALLOWED_ORIGINS = [o.rstrip("/") for o in origins]
+
+
 def apply_cors_headers(handler: BaseHTTPRequestHandler) -> None:
-    handler.send_header("Access-Control-Allow-Origin", "*")
+    origin = handler.headers.get("Origin", "")
+    if _ALLOWED_ORIGINS and origin in _ALLOWED_ORIGINS:
+        handler.send_header("Access-Control-Allow-Origin", origin)
+    elif not _ALLOWED_ORIGINS:
+        handler.send_header("Access-Control-Allow-Origin", "*")
+    else:
+        handler.send_header("Access-Control-Allow-Origin", "null")
     handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
     handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
     handler.send_header("Access-Control-Max-Age", "86400")
@@ -52,6 +66,14 @@ def apply_security_headers(handler: BaseHTTPRequestHandler) -> None:
     handler.send_header("X-Frame-Options", "DENY")
     handler.send_header("X-XSS-Protection", "1; mode=block")
     handler.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+    handler.send_header(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' fonts.googleapis.com; "
+        "font-src 'self' fonts.gstatic.com; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'; frame-ancestors 'none'"
+    )
 
 
 def authenticate_request(handler: BaseHTTPRequestHandler) -> Optional[AuthContext]:
@@ -62,10 +84,10 @@ def authenticate_request(handler: BaseHTTPRequestHandler) -> Optional[AuthContex
     payload = decode_token(token)
     if not payload:
         return None
-    permissions = payload.get("permissions", [])
+    permissions = payload.get("perms", [])
     return AuthContext(
         user_id=payload.get("sub", ""),
-        org_id=payload.get("org_id", ""),
+        org_id=payload.get("org", ""),
         permissions=permissions,
     )
 
@@ -90,7 +112,9 @@ def sanitize_filename(name: str) -> str:
     return name[:255] if name else "upload.txt"
 
 
-def validate_json_body(raw: bytes) -> tuple:
+def validate_json_body(raw: bytes | None) -> tuple:
+    if raw is None:
+        return None, "Request body too large or missing."
     if not raw or raw == b"{}":
         return {}, None
     try:

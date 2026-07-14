@@ -84,6 +84,7 @@ class ReviewReport:
     limitations: List[str]
     action_plan: List[str]
     revision_history: List[Dict[str, Any]] = field(default_factory=list)
+    score_explanations: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -92,6 +93,7 @@ class ReviewReport:
             "document": asdict(self.document),
             "summary": self.summary,
             "scores": self.scores,
+            "scoreExplanations": self.score_explanations,
             "findings": [finding.to_dict() for finding in self.findings],
             "agents": [agent.to_dict() for agent in self.agents],
             "limitations": self.limitations,

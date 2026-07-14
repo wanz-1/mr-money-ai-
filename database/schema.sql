@@ -224,7 +224,16 @@ CREATE TABLE audit_logs (
 );
 
 CREATE INDEX idx_documents_workspace ON documents(workspace_id);
+CREATE INDEX idx_documents_org ON documents(organization_id);
 CREATE INDEX idx_versions_document ON document_versions(document_id);
 CREATE INDEX idx_reviews_document_version ON reviews(document_version_id);
+CREATE INDEX idx_reviews_document ON reviews(document_id);
 CREATE INDEX idx_findings_review_severity ON findings(review_id, severity);
+CREATE INDEX idx_citations_document_version ON citations(document_version_id);
+CREATE INDEX idx_comments_document ON comments(document_id);
+CREATE INDEX idx_approval_document ON approval_steps(document_id);
+CREATE INDEX idx_api_keys_org ON api_keys(organization_id);
+CREATE INDEX idx_knowledge_base_org ON knowledge_base_entries(organization_id);
+CREATE INDEX idx_style_terms_org ON style_guide_terms(organization_id);
 CREATE INDEX idx_audit_logs_org_created ON audit_logs(organization_id, created_at DESC);
+CREATE INDEX idx_users_org_email ON users(organization_id, email);

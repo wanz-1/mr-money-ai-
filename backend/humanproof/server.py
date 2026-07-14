@@ -8,13 +8,36 @@ load_env()
 import argparse
 import base64
 import json
+import logging
 import mimetypes
 import os
+import time
+from collections import defaultdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import unquote, urlparse
+
+logger = logging.getLogger("humanproof.server")
+
+
+class RateLimiter:
+    def __init__(self, max_requests: int = 10, window_seconds: int = 60):
+        self._requests: dict[str, list[float]] = defaultdict(list)
+        self._max = max_requests
+        self._window = window_seconds
+
+    def is_allowed(self, key: str) -> bool:
+        now = time.time()
+        self._requests[key] = [t for t in self._requests[key] if now - t < self._window]
+        if len(self._requests[key]) >= self._max:
+            return False
+        self._requests[key].append(now)
+        return True
+
+
+_auth_limiter = RateLimiter(max_requests=10, window_seconds=60)
 
 from .ai_assistant import (
     chat as ai_chat,
@@ -202,6 +225,11 @@ class HumanProofHandler(BaseHTTPRequestHandler):
             self._send_json({"error": mw.error}, mw.status)
             return
 
+        client_ip = get_client_ip(self)
+        if not _auth_limiter.is_allowed(client_ip):
+            self._send_json({"error": "Too many attempts. Try again later."}, HTTPStatus.TOO_MANY_REQUESTS)
+            return
+
         data, err = validate_json_body(self._read_raw_body())
         if err:
             self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
@@ -251,7 +279,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 }, HTTPStatus.CREATED)
                 return
         except Exception as exc:
-            self._send_json({"error": f"Registration failed: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            logger.exception("Registration failed")
+            self._send_json({"error": "Registration failed. Please try again."}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
         self._send_json({"error": "Database not configured. Set DATABASE_URL."}, HTTPStatus.SERVICE_UNAVAILABLE)
@@ -260,6 +289,11 @@ class HumanProofHandler(BaseHTTPRequestHandler):
         mw = run_middleware(self)
         if not mw.ok:
             self._send_json({"error": mw.error}, mw.status)
+            return
+
+        client_ip = get_client_ip(self)
+        if not _auth_limiter.is_allowed(client_ip):
+            self._send_json({"error": "Too many attempts. Try again later."}, HTTPStatus.TOO_MANY_REQUESTS)
             return
 
         data, err = validate_json_body(self._read_raw_body())
@@ -301,8 +335,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                     "refreshToken": refresh,
                 })
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Login failed")
 
         self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
 
@@ -330,8 +364,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 if new_access:
                     self._send_json({"accessToken": new_access})
                     return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Token refresh failed")
 
         self._send_json({"error": "Token refresh failed."}, HTTPStatus.UNAUTHORIZED)
 
@@ -355,8 +389,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                         "permissions": auth.permissions,
                     })
                     return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to fetch user profile")
 
         self._send_json({"userId": auth.user_id, "orgId": auth.org_id, "permissions": auth.permissions})
 
@@ -397,7 +431,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 self._send_json(doc, HTTPStatus.CREATED)
                 return
         except Exception as exc:
-            self._send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            logger.exception("Failed to create document")
+            self._send_json({"error": "Failed to create document."}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
         self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
@@ -418,8 +453,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 docs = database.list_documents(mw.auth_context.org_id, ws_id, limit, offset)
                 self._send_json({"documents": docs})
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to list documents")
 
         self._send_json({"documents": []})
 
@@ -441,8 +476,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 versions = database.get_document_versions(doc_id)
                 self._send_json({"versions": versions})
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to fetch document versions")
 
         self._send_json({"versions": []})
 
@@ -511,13 +546,14 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                         )
                     for name, value in report.scores.items():
                         database.create_metric(report.review_id, name, value)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.exception("Failed to persist review to database")
 
             audit(mw.auth_context.org_id, "review.create", "review", report.review_id, mw.auth_context.user_id, get_client_ip(self))
             self._send_json(report.to_dict(), HTTPStatus.CREATED)
         except Exception as exc:
-            self._send_json({"error": f"Review failed: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            logger.exception("Document review failed")
+            self._send_json({"error": "Review failed. Please try again."}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     # -----------------------------------------------------------------------
     # Workspace endpoints
@@ -545,8 +581,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 ws = database.create_workspace(mw.auth_context.org_id, name, mw.auth_context.user_id)
                 self._send_json(ws, HTTPStatus.CREATED)
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to create workspace")
 
         self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
 
@@ -562,8 +598,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 workspaces = database.list_workspaces(mw.auth_context.org_id)
                 self._send_json({"workspaces": workspaces})
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to list workspaces")
 
         self._send_json({"workspaces": []})
 
@@ -604,8 +640,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 )
                 self._send_json(comment, HTTPStatus.CREATED)
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to add comment")
 
         self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
 
@@ -627,8 +663,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 comments = database.list_comments(doc_id)
                 self._send_json({"comments": comments})
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to list comments")
 
         self._send_json({"comments": []})
 
@@ -651,8 +687,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 steps = database.list_approval_steps(doc_id)
                 self._send_json({"steps": steps})
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to list approval steps")
 
         self._send_json({"steps": []})
 
@@ -681,8 +717,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 database.decide_approval_step(step_id, decision, note)
                 self._send_json({"status": decision})
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to process approval decision")
 
         self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
 
@@ -695,19 +731,59 @@ class HumanProofHandler(BaseHTTPRequestHandler):
         if err:
             self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
             return
-        self._send_json({"error": "Document comparison requires the comparison module (Phase 6)."}, HTTPStatus.NOT_IMPLEMENTED)
+        old_text = (data.get("original") or data.get("oldText") or "").strip()
+        new_text = (data.get("modified") or data.get("newText") or "").strip()
+        if not old_text and not new_text:
+            self._send_json({"error": "Provide 'original' and 'modified' text to compare."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from .comparison import compare_documents
+            result = compare_documents(old_text, new_text)
+            self._send_json(result.to_dict())
+        except Exception as exc:
+            logger.exception("Document comparison failed")
+            self._send_json({"error": "Comparison failed."}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _handle_format_document(self, path: str) -> None:
-        self._send_json({"error": "Auto-formatting requires the formatting engine (Phase 3)."}, HTTPStatus.NOT_IMPLEMENTED)
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        text = (data.get("text") or data.get("content") or "").strip()
+        if not text:
+            self._send_json({"error": "Provide 'text' to format."}, HTTPStatus.BAD_REQUEST)
+            return
+        formatted = _auto_format(text)
+        self._send_json({"formatted": formatted, "original_length": len(text), "formatted_length": len(formatted)})
 
     def _handle_humanize(self, path: str) -> None:
-        self._send_json({"error": "Humanization requires the humanization engine (Phase 4)."}, HTTPStatus.NOT_IMPLEMENTED)
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        text = (data.get("text") or data.get("content") or "").strip()
+        mode = data.get("mode", "professional")
+        if not text:
+            self._send_json({"error": "Provide 'text' to humanize."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            result = _humanize_text(text, mode)
+            self._send_json(result)
+        except Exception as exc:
+            logger.exception("Humanization failed")
+            self._send_json({"error": "Humanization failed."}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _handle_research(self, path: str) -> None:
         self._send_json({"error": "Research intelligence requires the research module (Phase 5)."}, HTTPStatus.NOT_IMPLEMENTED)
 
     def _handle_list_templates(self) -> None:
-        self._send_json({"error": "Templates require the template engine (Phase 4)."}, HTTPStatus.NOT_IMPLEMENTED)
+        try:
+            from .templates import list_templates
+            templates = list_templates()
+            self._send_json({"templates": templates, "count": len(templates)})
+        except Exception as exc:
+            logger.exception("Failed to list templates")
+            self._send_json({"error": "Failed to load templates."}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     # -----------------------------------------------------------------------
     # Audit log endpoint
@@ -727,8 +803,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 logs = database.list_audit_logs(mw.auth_context.org_id, limit)
                 self._send_json({"logs": logs})
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to fetch audit logs")
 
         self._send_json({"logs": []})
 
@@ -824,8 +900,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
             for event in ai_chat_stream(session_id, message):
                 self.wfile.write(event.encode("utf-8"))
                 self.wfile.flush()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("AI chat stream interrupted")
 
     def _handle_ai_image(self) -> None:
         data, err = validate_json_body(self._read_raw_body())
@@ -883,7 +959,8 @@ class HumanProofHandler(BaseHTTPRequestHandler):
             REVIEWS[report.review_id] = report
             self._send_json(report.to_dict(), HTTPStatus.CREATED)
         except Exception as exc:
-            self._send_json({"error": f"Review failed: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            logger.exception("Review failed")
+            self._send_json({"error": "Review failed. Please try again."}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _handle_review_get(self, path: str) -> None:
         parts = [unquote(part) for part in path.split("/") if part]
@@ -974,9 +1051,16 @@ class HumanProofHandler(BaseHTTPRequestHandler):
     # Helpers
     # -----------------------------------------------------------------------
 
-    def _read_raw_body(self) -> bytes:
+    MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
+
+    def _read_raw_body(self) -> bytes | None:
         length = int(self.headers.get("Content-Length", "0"))
-        return self.rfile.read(length) if length else b"{}"
+        if length > self.MAX_BODY_SIZE:
+            self._send_json({"error": "Request body too large. Max 10 MB."}, HTTPStatus.BAD_REQUEST)
+            return None
+        if length <= 0:
+            return b"{}"
+        return self.rfile.read(length)
 
     def _send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, ensure_ascii=True, indent=2).encode("utf-8")
@@ -1005,7 +1089,16 @@ def run(host: str = "0.0.0.0", port: int = 8765) -> None:
         init_pool(DBConfig.from_env())
         print("Database pool initialized.")
     except Exception as exc:
-        print(f"Warning: Database not available ({exc}). Running without persistence.")
+        logger.warning("Database not available (%s). Running without persistence.", exc)
+
+    allowed_origins = os.environ.get("HP_CORS_ORIGINS", "").split(",")
+    allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
+    if allowed_origins:
+        from .middleware import set_allowed_origins
+        set_allowed_origins(allowed_origins)
+        print(f"CORS restricted to: {allowed_origins}")
+    else:
+        print("CORS: All origins allowed (set HP_CORS_ORIGINS to restrict)")
 
     init_audit_logger()
 
@@ -1020,8 +1113,95 @@ def run(host: str = "0.0.0.0", port: int = 8765) -> None:
         try:
             from .database import close_pool
             close_pool()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to close database pool: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Auto-format and humanization helpers
+# ---------------------------------------------------------------------------
+
+def _auto_format(text: str) -> str:
+    """Apply basic auto-formatting rules to text."""
+    import re as _re
+    lines = text.split("\n")
+    result: list[str] = []
+    prev_blank = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if not prev_blank:
+                result.append("")
+                prev_blank = True
+            continue
+        prev_blank = False
+        stripped = _re.sub(r"\s+", " ", stripped)
+        stripped = _re.sub(r"\s+([.,;:!?])", r"\1", stripped)
+        stripped = _re.sub(r"\(\s+", "(", stripped)
+        stripped = _re.sub(r"\s+\)", ")", stripped)
+        result.append(stripped)
+    return "\n\n".join(result)
+
+
+def _humanize_text(text: str, mode: str = "professional") -> dict:
+    """Apply rule-based humanization improvements while preserving meaning."""
+    import re as _re
+    original = text
+    changes: list[dict] = []
+    improved = text
+
+    passive_patterns = [
+        (r"\bwas\s+(\w+ed)\b", r"actively \1"),
+        (r"\bare\s+(\w+ed)\b", r"actively \1"),
+    ]
+    for pattern, replacement in passive_patterns:
+        for match in _re.finditer(pattern, improved, _re.I):
+            changes.append({
+                "type": "passive_voice",
+                "original": match.group(),
+                "suggested": _re.sub(pattern, replacement, match.group(), count=1),
+            })
+
+    filler_words = ["very", "really", "quite", "basically", "actually", "just", "simply"]
+    for filler in filler_words:
+        pattern = r"\b" + filler + r"\b"
+        matches = list(_re.finditer(pattern, improved, _re.I))
+        for match in matches[:2]:
+            changes.append({
+                "type": "filler_word",
+                "original": match.group(),
+                "suggested": "",
+            })
+
+    wordiness = {
+        "due to the fact that": "because",
+        "in order to": "to",
+        "at this point in time": "now",
+        "in the event that": "if",
+        "for the purpose of": "to",
+        "it is important to note that": "",
+        "with regard to": "about",
+        "in terms of": "for",
+    }
+    for phrase, replacement in wordiness.items():
+        if phrase in improved.lower():
+            pattern = _re.compile(_re.escape(phrase), _re.I)
+            match = pattern.search(improved)
+            if match:
+                changes.append({
+                    "type": "wordiness",
+                    "original": match.group(),
+                    "suggested": replacement,
+                })
+
+    return {
+        "original": original,
+        "improved": improved,
+        "changes": changes,
+        "changeCount": len(changes),
+        "mode": mode,
+        "message": f"Found {len(changes)} improvement(s). Apply suggestions to improve readability.",
+    }
 
 
 def main() -> None:

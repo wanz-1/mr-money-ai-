@@ -10,6 +10,10 @@ services:
     environment:
       - HP_HOST=0.0.0.0
       - HP_PORT=8765
+      - DATABASE_URL=postgresql://humanproof:${POSTGRES_PASSWORD:-humanproof_secret}@db:5432/humanproof
+    depends_on:
+      db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health').read()"]
       interval: 30s
@@ -19,12 +23,10 @@ services:
 
   db:
     image: postgres:16-alpine
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_DB: humanproof
       POSTGRES_USER: humanproof
-      POSTGRES_PASSWORD: humanproof_secret
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-humanproof_secret}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ../database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql

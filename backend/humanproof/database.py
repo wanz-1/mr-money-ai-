@@ -120,7 +120,8 @@ def get_organization(org_id: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         with get_cursor(conn) as cur:
             cur.execute("SELECT * FROM organizations WHERE id = %s", (org_id,))
-            return dict(cur.fetchone()) if cur.fetchone() else None
+            row = cur.fetchone()
+            return dict(row) if row else None
 
 
 # ---------------------------------------------------------------------------
