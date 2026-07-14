@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from .config import load_env
+load_env()
+
 import argparse
 import base64
 import json
@@ -13,7 +16,14 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import unquote, urlparse
 
-from .ai_assistant import chat as ai_chat, create_session as ai_create_session, get_provider_info, get_session as ai_get_session
+from .ai_assistant import (
+    chat as ai_chat,
+    chat_stream as ai_chat_stream,
+    create_session as ai_create_session,
+    generate_image as ai_generate_image,
+    get_provider_info,
+    get_session as ai_get_session,
+)
 from .audit import audit, init_audit_logger, shutdown_audit_logger
 from .auth import create_access_token, create_refresh_token, decode_token, hash_password, refresh_access_token, verify_password
 from .extractors import SUPPORTED_FORMATS, extract_document
@@ -170,6 +180,14 @@ class HumanProofHandler(BaseHTTPRequestHandler):
 
         if path == "/api/ai/chat":
             self._handle_ai_chat()
+            return
+
+        if path == "/api/ai/chat/stream":
+            self._handle_ai_chat_stream()
+            return
+
+        if path == "/api/ai/image":
+            self._handle_ai_image()
             return
 
         self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
@@ -768,6 +786,62 @@ class HumanProofHandler(BaseHTTPRequestHandler):
             session_id = session.session_id
 
         result = ai_chat(session_id, message)
+        if "error" in result:
+            self._send_json(result, HTTPStatus.BAD_REQUEST)
+            return
+        self._send_json(result)
+
+    def _handle_ai_chat_stream(self) -> None:
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+
+        session_id = data.get("sessionId", "")
+        message = (data.get("message") or "").strip()
+
+        if not message:
+            self._send_json({"error": "Message required."}, HTTPStatus.BAD_REQUEST)
+            return
+
+        if not session_id:
+            session = ai_create_session(
+                document_text=data.get("documentText"),
+                document_name=data.get("documentName"),
+                review_data=data.get("reviewData"),
+            )
+            session_id = session.session_id
+
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        apply_cors_headers(self)
+        self.end_headers()
+
+        try:
+            for event in ai_chat_stream(session_id, message):
+                self.wfile.write(event.encode("utf-8"))
+                self.wfile.flush()
+        except Exception:
+            pass
+
+    def _handle_ai_image(self) -> None:
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+
+        prompt = (data.get("prompt") or "").strip()
+        if not prompt:
+            self._send_json({"error": "Prompt required."}, HTTPStatus.BAD_REQUEST)
+            return
+
+        size = data.get("size", "1024x1024")
+        n = int(data.get("n", 1))
+
+        result = ai_generate_image(prompt, size, n)
         if "error" in result:
             self._send_json(result, HTTPStatus.BAD_REQUEST)
             return

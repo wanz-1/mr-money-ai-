@@ -545,6 +545,12 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
       const msg = this.input.trim();
       if (!msg || this.streaming) return;
 
+      if (msg.toLowerCase().startsWith("/imagine ") || msg.toLowerCase().startsWith("/image ")) {
+        this.input = "";
+        this._generateImage(msg.replace(/^\/(imagine|image)\s+/i, ""));
+        return;
+      }
+
       this.messages.push({ role: "user", content: msg });
       this.input = "";
       this.streaming = true;
@@ -565,7 +571,7 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
           payload.reviewData = this.reviewData;
         }
 
-        const resp = await fetch(`${base}/api/ai/chat`, {
+        const resp = await fetch(`${base}/api/ai/chat/stream`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...Alpine.store("auth").headers() },
           body: JSON.stringify(payload),
@@ -576,12 +582,73 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
           throw new Error(err.error || "Chat failed");
         }
 
-        const data = await resp.json();
-        this.sessionId = data.sessionId || this.sessionId;
-        this.provider = data.provider || this.provider;
-        this.messages.push({ role: "assistant", content: data.reply });
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let assistantContent = "";
+        const assistantIdx = this.messages.length;
+        this.messages.push({ role: "assistant", content: "" });
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.token) {
+                assistantContent += data.token;
+                this.messages[assistantIdx].content = assistantContent;
+                this._scrollToBottom();
+              }
+              if (data.done) {
+                this.sessionId = data.sessionId || this.sessionId;
+                this.provider = data.provider || this.provider;
+              }
+              if (data.error) {
+                this.messages[assistantIdx].content = "Error: " + data.error;
+              }
+            } catch (e) { /* skip malformed */ }
+          }
+        }
       } catch (e) {
         this.messages.push({ role: "assistant", content: "Sorry, I encountered an error: " + e.message });
+      } finally {
+        this.streaming = false;
+        this._scrollToBottom();
+      }
+    },
+
+    async _generateImage(prompt) {
+      this.messages.push({ role: "user", content: "/imagine " + prompt });
+      this.streaming = true;
+      this._scrollToBottom();
+
+      try {
+        const base = Alpine.store("app").apiBase;
+        const resp = await fetch(`${base}/api/ai/image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...Alpine.store("auth").headers() },
+          body: JSON.stringify({ prompt, size: "1024x1024", n: 1 }),
+        });
+        const data = await resp.json();
+        if (data.error) {
+          this.messages.push({ role: "assistant", content: "Image generation error: " + data.error });
+        } else if (data.images && data.images.length > 0) {
+          const imgHtml = data.images.map(img =>
+            `<img src="${img.url}" alt="Generated image" style="max-width:100%;border-radius:8px;margin:8px 0" loading="lazy">`
+          ).join("");
+          this.messages.push({ role: "assistant", content: imgHtml });
+        } else {
+          this.messages.push({ role: "assistant", content: "No images were generated." });
+        }
+      } catch (e) {
+        this.messages.push({ role: "assistant", content: "Image generation failed: " + e.message });
       } finally {
         this.streaming = false;
         this._scrollToBottom();

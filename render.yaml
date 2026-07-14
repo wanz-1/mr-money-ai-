@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: humanproof-ai
+    runtime: python
+    buildCommand: pip install -e .
+    startCommand: python -m backend.humanproof.server --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: HP_AI_PROVIDER
+        value: custom
+      - key: HP_CUSTOM_API_BASE
+        value: https://aimodelapi.onrender.com/v1
+      - key: HP_CUSTOM_API_KEY
+        sync: false
+      - key: HP_CUSTOM_MODEL
+        value: dev-x
+      - key: HP_HOST
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: humanproof-db
+          property: connectionString
+    healthCheckPath: /health
+    autoDeploy: true
+
+  - type: database
+    name: humanproof-db
+    databaseName: humanproof
+    plan: free

@@ -16,6 +16,9 @@ Environment variables:
 
 from __future__ import annotations
 
+from .config import load_env
+load_env()
+
 import json
 import os
 import uuid
@@ -476,3 +479,203 @@ def get_provider_info() -> Dict[str, Any]:
             },
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# SSE Streaming
+# ---------------------------------------------------------------------------
+
+def chat_stream(session_id: str, user_message: str):
+    """Yields SSE events: data: {"token": "..."} or data: {"done": true, "fullReply": "..."}"""
+    session = get_session(session_id)
+    if not session:
+        yield f"data: {json.dumps({'error': 'Session not found.'})}\n\n"
+        return
+
+    if not user_message.strip():
+        yield f"data: {json.dumps({'error': 'Empty message.'})}\n\n"
+        return
+
+    provider = _detect_provider()
+    messages = _build_messages(session, user_message)
+    session.messages.append(ChatMessage(role="user", content=user_message))
+
+    full_reply = ""
+
+    try:
+        if provider in ("openai", "custom"):
+            for token in _stream_openai_compatible(messages, provider):
+                full_reply += token
+                yield f"data: {json.dumps({'token': token})}\n\n"
+        elif provider == "anthropic":
+            for token in _stream_anthropic(messages):
+                full_reply += token
+                yield f"data: {json.dumps({'token': token})}\n\n"
+        else:
+            reply = _chat_local(session, user_message)
+            full_reply = reply
+            yield f"data: {json.dumps({'token': reply})}\n\n"
+    except Exception as exc:
+        full_reply = f"Stream error ({provider}): {exc}"
+        yield f"data: {json.dumps({'token': full_reply})}\n\n"
+
+    session.messages.append(ChatMessage(role="assistant", content=full_reply))
+    yield f"data: {json.dumps({'done': True, 'fullReply': full_reply, 'provider': provider, 'sessionId': session_id})}\n\n"
+
+
+def _stream_openai_compatible(messages: List[Dict[str, str]], provider: str):
+    """Yields tokens from OpenAI-compatible streaming API."""
+    if provider == "custom":
+        api_base = CUSTOM_API_BASE
+        api_key = CUSTOM_API_KEY
+        model = CUSTOM_MODEL
+    else:
+        api_base = "https://api.openai.com/v1"
+        api_key = OPENAI_API_KEY
+        model = OPENAI_MODEL
+
+    if not api_key:
+        yield "API key not configured."
+        return
+
+    url = api_base.rstrip("/") + "/chat/completions"
+    payload = json.dumps({
+        "model": model,
+        "messages": messages,
+        "max_tokens": MAX_TOKENS,
+        "temperature": TEMPERATURE,
+        "stream": True,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        buffer = ""
+        while True:
+            chunk = resp.read(4096)
+            if not chunk:
+                break
+            buffer += chunk.decode("utf-8", errors="replace")
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line = line.strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data_str = line[5:].strip()
+                if data_str == "[DONE]":
+                    return
+                try:
+                    data = json.loads(data_str)
+                    delta = data.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        yield content
+                except (json.JSONDecodeError, IndexError, KeyError):
+                    pass
+
+
+def _stream_anthropic(messages: List[Dict[str, str]]):
+    """Yields tokens from Anthropic streaming API."""
+    if not ANTHROPIC_API_KEY:
+        yield "Anthropic API key not configured."
+        return
+
+    system_msg = ""
+    api_messages: List[Dict[str, str]] = []
+    for msg in messages:
+        if msg["role"] == "system":
+            system_msg += msg["content"] + "\n\n"
+        else:
+            api_messages.append(msg)
+
+    payload = json.dumps({
+        "model": ANTHROPIC_MODEL,
+        "max_tokens": MAX_TOKENS,
+        "system": system_msg.strip(),
+        "messages": api_messages,
+        "temperature": TEMPERATURE,
+        "stream": True,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+        },
+    )
+
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        buffer = ""
+        while True:
+            chunk = resp.read(4096)
+            if not chunk:
+                break
+            buffer += chunk.decode("utf-8", errors="replace")
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line = line.strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data_str = line[5:].strip()
+                try:
+                    data = json.loads(data_str)
+                    if data.get("type") == "content_block_delta":
+                        text = data.get("delta", {}).get("text", "")
+                        if text:
+                            yield text
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+
+# ---------------------------------------------------------------------------
+# Image Generation
+# ---------------------------------------------------------------------------
+
+IMAGE_GEN_MODEL = "image-gen"
+
+
+def generate_image(prompt: str, size: str = "1024x1024", n: int = 1) -> Dict[str, Any]:
+    """Generate an image using the custom API."""
+    if not CUSTOM_API_KEY or not CUSTOM_API_BASE:
+        return {"error": "Image generation requires a configured custom API."}
+
+    url = CUSTOM_API_BASE.rstrip("/") + "/images/generations"
+    payload = json.dumps({
+        "model": IMAGE_GEN_MODEL,
+        "prompt": prompt,
+        "n": n,
+        "size": size,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {CUSTOM_API_KEY}",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        images = data.get("data", [])
+        if images:
+            return {
+                "images": [{"url": img.get("url", ""), "revisedPrompt": img.get("revised_prompt", "")} for img in images],
+                "provider": "custom",
+            }
+        return {"error": "No images generated."}
+    except Exception as exc:
+        return {"error": f"Image generation failed: {exc}"}
