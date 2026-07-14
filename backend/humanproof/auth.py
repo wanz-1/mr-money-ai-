@@ -1,4 +1,4 @@
-"""Authentication and authorization for HumanProof AI."""
+"""Authentication and authorization for Mr Money AI."""
 
 from __future__ import annotations
 

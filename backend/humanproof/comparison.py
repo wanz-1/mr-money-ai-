@@ -1,4 +1,4 @@
-"""Document comparison engine for HumanProof AI."""
+"""Document comparison engine for Mr Money AI."""
 
 from __future__ import annotations
 

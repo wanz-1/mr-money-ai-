@@ -2,7 +2,7 @@
 
 ## Review a Document
 
-1. Open the HumanProof AI web application.
+1. Open the Mr Money AI web application.
 2. Upload a supported document or paste text into the editor.
 3. Select `Run Review`.
 4. Review the publication readiness score, quality metrics, findings, and action plan.
@@ -39,5 +39,5 @@ Scanned PDFs require OCR in production deployments.
 
 ## Responsible Use
 
-Use HumanProof AI as review support. Do not use AI-writing indicators as the only basis for academic misconduct, employment, or disciplinary decisions.
+Use Mr Money AI as review support. Do not use AI-writing indicators as the only basis for academic misconduct, employment, or disciplinary decisions.
 

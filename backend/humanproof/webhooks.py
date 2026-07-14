@@ -1,4 +1,4 @@
-"""Webhook delivery system for HumanProof AI."""
+"""Webhook delivery system for Mr Money AI."""
 
 from __future__ import annotations
 
@@ -169,7 +169,7 @@ class WebhookManager:
                     "Content-Type": "application/json",
                     "X-Webhook-Signature": f"sha256={signature}",
                     "X-Webhook-Event": delivery.event_type,
-                    "User-Agent": "HumanProofAI-Webhook/0.2",
+                    "User-Agent": "MrMoneyAI-Webhook/0.2",
                 },
                 method="POST",
             )

@@ -1,4 +1,4 @@
-"""Audit logging for HumanProof AI."""
+"""Audit logging for Mr Money AI."""
 
 from __future__ import annotations
 

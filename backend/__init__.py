@@ -1,2 +1,2 @@
-"""Backend package root for HumanProof AI."""
+"""Backend package root for Mr Money AI."""
 

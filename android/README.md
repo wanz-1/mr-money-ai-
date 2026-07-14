@@ -1,4 +1,4 @@
-# HumanProof AI - Android App
+# Mr Money AI - Android App
 
 ## Build with Android Studio
 
@@ -18,7 +18,7 @@ cd android
 
 1. Build a signed AAB: `./gradlew bundleRelease`
 2. Upload to [Play Console](https://play.google.com/console)
-3. The app loads your deployed HumanProof AI instance
+3. The app loads your deployed Mr Money AI instance
 
 ## Configuration
 

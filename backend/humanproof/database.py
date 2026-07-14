@@ -1,4 +1,4 @@
-"""PostgreSQL database connection and query layer for HumanProof AI."""
+"""PostgreSQL database connection and query layer for Mr Money AI."""
 
 from __future__ import annotations
 

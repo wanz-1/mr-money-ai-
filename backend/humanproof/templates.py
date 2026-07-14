@@ -1,4 +1,4 @@
-"""Document templates for HumanProof AI document creation."""
+"""Document templates for Mr Money AI document creation."""
 
 from __future__ import annotations
 

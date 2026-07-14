@@ -1,4 +1,4 @@
-"""Encryption utilities for HumanProof AI.
+"""Encryption utilities for Mr Money AI.
 
 Uses HMAC-based encryption for data integrity. For production use with
 sensitive data, configure HP_ENCRYPTION_KEY with a stable secret.

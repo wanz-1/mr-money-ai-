@@ -1,4 +1,4 @@
-/* HumanProof AI - Alpine.js Application */
+/* Mr Money AI - Alpine.js Application */
 document.addEventListener("alpine:init", () => {
 
   // ── Toast notifications ──

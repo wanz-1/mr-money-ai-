@@ -1,4 +1,4 @@
-"""Specialized local analysis agents for HumanProof AI."""
+"""Specialized local analysis agents for Mr Money AI."""
 
 from __future__ import annotations
 

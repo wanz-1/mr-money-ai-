@@ -1,4 +1,4 @@
-"""Collaboration and workflow engine for HumanProof AI."""
+"""Collaboration and workflow engine for Mr Money AI."""
 
 from __future__ import annotations
 

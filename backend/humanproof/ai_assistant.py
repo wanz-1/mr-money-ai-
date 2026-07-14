@@ -1,4 +1,4 @@
-"""AI Assistant module for HumanProof AI.
+"""AI Assistant module for Mr Money AI.
 
 Multi-provider intelligent assistant with OpenAI, Anthropic, custom, and local fallback.
 Environment variables:
@@ -56,7 +56,7 @@ TEMPERATURE = float(_env("HP_AI_TEMPERATURE", "0.7"))
 # System prompt
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are the HumanProof AI Assistant, an expert in document analysis, writing quality, and publication readiness. You work inside the HumanProof AI platform.
+SYSTEM_PROMPT = """You are the Mr Money AI Assistant, an expert in document analysis, writing quality, and publication readiness. You work inside the Mr Money AI platform.
 
 Your capabilities:
 - Analyze writing quality, grammar, style, readability, and tone
@@ -331,7 +331,7 @@ def _chat_local(session: ChatSession, user_message: str) -> str:
 
     if any(kw in lower for kw in ["help", "what can you do", "capabilities", "features"]):
         return (
-            "I'm the HumanProof AI Assistant running in local mode. Here's what I can help with:\n\n"
+            "I'm the Mr Money AI Assistant running in local mode. Here's what I can help with:\n\n"
             "**Document Analysis** - I can analyze documents you paste into the review workspace.\n"
             "**Review Interpretation** - Ask me to explain any finding, score, or recommendation.\n"
             "**Writing Advice** - Get suggestions on grammar, style, tone, readability, and structure.\n"
@@ -475,7 +475,7 @@ def get_provider_info() -> Dict[str, Any]:
             },
             "local": {
                 "configured": True,
-                "description": "Built-in assistant using HumanProof AI review agents",
+                "description": "Built-in assistant using Mr Money AI review agents",
             },
         },
     }

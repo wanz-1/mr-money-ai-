@@ -1,4 +1,4 @@
-"""Environment configuration loader for HumanProof AI.
+"""Environment configuration loader for Mr Money AI.
 
 Loads .env file from project root. Does not override existing env vars.
 """

@@ -1,6 +1,6 @@
-# HumanProof AI
+# Mr Money AI
 
-HumanProof AI is a cloud-deployable AI Document Intelligence Platform for professional writing review, transparent AI-writing analysis, citation checks, similarity review, fact-checking support, accessibility review, compliance triage, and publication readiness reporting.
+Mr Money AI is a cloud-deployable AI Document Intelligence Platform for professional writing review, transparent AI-writing analysis, citation checks, similarity review, fact-checking support, accessibility review, compliance triage, and publication readiness reporting.
 
 **Live:** https://mr-money-ai.onrender.com
 
@@ -55,7 +55,7 @@ android/                  Android TWA wrapper for Play Store
 
 ## Integrity Position
 
-HumanProof AI does not claim to prove whether text was written by a human or by AI. Its AI-writing analysis is transparent and probabilistic, showing confidence estimates, evidence indicators, and limitations. Findings are decision support for responsible review, not misconduct determinations.
+Mr Money AI does not claim to prove whether text was written by a human or by AI. Its AI-writing analysis is transparent and probabilistic, showing confidence estimates, evidence indicators, and limitations. Findings are decision support for responsible review, not misconduct determinations.
 
 ## Documentation
 

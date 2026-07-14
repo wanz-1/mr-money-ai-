@@ -1,6 +1,6 @@
 # Security Implementation
 
-HumanProof AI is privacy-first and local-first by default. The current local server does not send document content to external services.
+Mr Money AI is privacy-first and local-first by default. The current local server does not send document content to external services.
 
 ## Implemented Locally
 

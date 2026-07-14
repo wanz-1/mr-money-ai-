@@ -1,4 +1,4 @@
-"""Report exporters for HumanProof AI."""
+"""Report exporters for Mr Money AI."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def report_as_json(report: ReviewReport) -> bytes:
 
 def report_as_markdown(report: ReviewReport) -> bytes:
     lines = [
-        f"# HumanProof AI Review Report",
+        f"# Mr Money AI Review Report",
         "",
         f"Review ID: `{report.review_id}`",
         f"Created: `{report.created_at}`",
@@ -61,7 +61,7 @@ def report_as_html(report: ReviewReport) -> bytes:
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>HumanProof AI Review Report</title>
+  <title>Mr Money AI Review Report</title>
   <style>
     body {{ font-family: Arial, sans-serif; line-height: 1.5; margin: 40px; color: #17202a; }}
     h1, h2, h3 {{ color: #0f3d57; }}
@@ -76,7 +76,7 @@ def report_as_html(report: ReviewReport) -> bytes:
   </style>
 </head>
 <body>
-  <h1>HumanProof AI Review Report</h1>
+  <h1>Mr Money AI Review Report</h1>
   <p class="meta">Review ID: <code>{escape(report.review_id)}</code><br>Created: {escape(report.created_at)}<br>Document: {escape(report.document.filename)}</p>
   <h2>Executive Summary</h2>
   <p>{escape(report.summary)}</p>
@@ -95,7 +95,7 @@ def report_as_html(report: ReviewReport) -> bytes:
 
 def report_as_docx(report: ReviewReport) -> bytes:
     paragraphs = [
-        ("HumanProof AI Review Report", "Title"),
+        ("Mr Money AI Review Report", "Title"),
         (f"Review ID: {report.review_id}", "Normal"),
         (f"Created: {report.created_at}", "Normal"),
         (f"Document: {report.document.filename}", "Normal"),
@@ -130,7 +130,7 @@ def report_as_docx(report: ReviewReport) -> bytes:
 
 def report_as_pdf(report: ReviewReport) -> bytes:
     lines = [
-        "HumanProof AI Review Report",
+        "Mr Money AI Review Report",
         f"Review ID: {report.review_id}",
         f"Created: {report.created_at}",
         f"Document: {report.document.filename}",

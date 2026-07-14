@@ -1,4 +1,4 @@
-"""HumanProof AI document intelligence platform."""
+"""Mr Money AI document intelligence platform."""
 
 from .orchestrator import review_document, review_text
 

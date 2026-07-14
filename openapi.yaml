@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: HumanProof AI API
+  title: Mr Money AI API
   version: 0.2.0
   description: Enterprise-grade document intelligence platform API.
 servers:

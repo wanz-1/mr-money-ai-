@@ -8,19 +8,25 @@
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="HumanProof AI"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="Mr Money AI"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="true">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".SplashActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:screenOrientation="unspecified">
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:screenOrientation="unspecified" />
     </application>
 </manifest>

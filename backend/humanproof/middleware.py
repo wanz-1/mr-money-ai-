@@ -1,4 +1,4 @@
-"""HTTP middleware helpers for HumanProof AI."""
+"""HTTP middleware helpers for Mr Money AI."""
 
 from __future__ import annotations
 

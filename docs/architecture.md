@@ -1,6 +1,6 @@
 # System Architecture
 
-HumanProof AI is organized as a modular document intelligence platform. The current implementation is local-first and dependency-light; enterprise capabilities are represented as explicit adapter boundaries so they can be replaced with managed services without changing the domain model.
+Mr Money AI is organized as a modular document intelligence platform. The current implementation is local-first and dependency-light; enterprise capabilities are represented as explicit adapter boundaries so they can be replaced with managed services without changing the domain model.
 
 ## Runtime Layers
 

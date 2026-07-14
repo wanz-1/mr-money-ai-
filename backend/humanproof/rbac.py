@@ -1,4 +1,4 @@
-"""Role-Based Access Control for HumanProof AI."""
+"""Role-Based Access Control for Mr Money AI."""
 
 from __future__ import annotations
 

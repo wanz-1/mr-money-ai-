@@ -1,4 +1,4 @@
-"""Command-line entry point for local HumanProof AI reviews."""
+"""Command-line entry point for local Mr Money AI reviews."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from .orchestrator import review_document
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Review a document with HumanProof AI.")
+    parser = argparse.ArgumentParser(description="Review a document with Mr Money AI.")
     parser.add_argument("document", help="Path to the document to review.")
     parser.add_argument("--format", default="md", choices=["json", "md", "html", "docx", "pdf"], help="Report format.")
     parser.add_argument("--output", help="Output report path.")

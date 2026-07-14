@@ -1,4 +1,4 @@
-"""Shared domain models for HumanProof AI."""
+"""Shared domain models for Mr Money AI."""
 
 from __future__ import annotations
 

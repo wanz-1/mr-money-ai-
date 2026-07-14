@@ -1,4 +1,4 @@
-"""Local HTTP API and static frontend server for HumanProof AI."""
+"""Local HTTP API and static frontend server for Mr Money AI."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ REVIEWS: Dict[str, ReviewReport] = {}
 # ---------------------------------------------------------------------------
 
 class HumanProofHandler(BaseHTTPRequestHandler):
-    server_version = "HumanProofAI/0.2"
+    server_version = "MrMoneyAI/0.2"
 
     def do_OPTIONS(self) -> None:
         self._send_empty(HTTPStatus.NO_CONTENT)
@@ -1103,7 +1103,7 @@ def run(host: str = "0.0.0.0", port: int = 8765) -> None:
     init_audit_logger()
 
     server = ThreadingHTTPServer((host, port), HumanProofHandler)
-    print(f"HumanProof AI running at http://{host}:{port}")
+    print(f"Mr Money AI running at http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1205,7 +1205,7 @@ def _humanize_text(text: str, mode: str = "professional") -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the HumanProof AI local API server.")
+    parser = argparse.ArgumentParser(description="Run the Mr Money AI local API server.")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()

@@ -1,4 +1,4 @@
-"""Batch document processing for HumanProof AI."""
+"""Batch document processing for Mr Money AI."""
 
 from __future__ import annotations
 

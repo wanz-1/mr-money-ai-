@@ -1,4 +1,4 @@
-"""Master orchestration engine for HumanProof AI review agents."""
+"""Master orchestration engine for Mr Money AI review agents."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def review_document(document: Document) -> ReviewReport:
         revision_history=[
             {
                 "timestamp": created_at,
-                "actor": "HumanProof AI",
+                "actor": "Mr Money AI",
                 "event": "Initial automated review completed",
             }
         ],
