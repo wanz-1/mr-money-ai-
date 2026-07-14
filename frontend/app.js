@@ -394,6 +394,7 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
   Alpine.store("research", {
     text: "",
     busy: false,
+    tab: "search",
     graph: null,
     graphMermaid: "",
     citationText: "",
@@ -475,6 +476,68 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
         this.result = await resp.json();
       } catch (e) {
         Alpine.store("toast").show("Comparison unavailable: " + e.message, "error");
+      } finally {
+        this.busy = false;
+      }
+    },
+  });
+
+  // ── Search store ──
+  Alpine.store("search", {
+    query: "",
+    results: [],
+    busy: false,
+    selectedAgent: "executive",
+    agents: [],
+    agentResult: null,
+    agentQuery: "",
+
+    async search() {
+      if (!this.query.trim()) return;
+      this.busy = true;
+      try {
+        const base = Alpine.store("app").apiBase;
+        const resp = await fetch(`${base}/api/search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...Alpine.store("auth").headers() },
+          body: JSON.stringify({ query: this.query, maxResults: 8 }),
+        });
+        if (!resp.ok) throw new Error(`Search failed (${resp.status})`);
+        const data = await resp.json();
+        this.results = data.results || [];
+      } catch (e) {
+        Alpine.store("toast").show(e.message, "error");
+      } finally {
+        this.busy = false;
+      }
+    },
+
+    async loadAgents() {
+      try {
+        const base = Alpine.store("app").apiBase;
+        const resp = await fetch(`${base}/api/agents`, { headers: Alpine.store("auth").headers() });
+        if (resp.ok) {
+          const data = await resp.json();
+          this.agents = data.agents || [];
+        }
+      } catch (e) { /* silent */ }
+    },
+
+    async runAgent() {
+      if (!this.agentQuery.trim()) return;
+      this.busy = true;
+      this.agentResult = null;
+      try {
+        const base = Alpine.store("app").apiBase;
+        const resp = await fetch(`${base}/api/agents/run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...Alpine.store("auth").headers() },
+          body: JSON.stringify({ agent: this.selectedAgent, query: this.agentQuery, context: {} }),
+        });
+        if (!resp.ok) throw new Error(`Agent failed (${resp.status})`);
+        this.agentResult = await resp.json();
+      } catch (e) {
+        Alpine.store("toast").show(e.message, "error");
       } finally {
         this.busy = false;
       }
