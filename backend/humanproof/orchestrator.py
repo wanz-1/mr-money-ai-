@@ -63,15 +63,15 @@ class ReviewPipeline:
             try:
                 result = agent.analyze(self.document)
                 completed_count += 1
-                self._notify(agent.AGENT_NAME if hasattr(agent, "AGENT_NAME") else str(agent),
+                self._notify(agent.name if hasattr(agent, "name") else str(agent),
                              completed_count, self._total_agents, "complete")
                 return result
             except Exception as exc:
                 completed_count += 1
-                self._notify(agent.AGENT_NAME if hasattr(agent, "AGENT_NAME") else str(agent),
+                self._notify(agent.name if hasattr(agent, "name") else str(agent),
                              completed_count, self._total_agents, "failed")
                 return AgentResult(
-                    agent=agent.AGENT_NAME if hasattr(agent, "AGENT_NAME") else "unknown",
+                    agent=agent.name if hasattr(agent, "name") else "unknown",
                     summary=f"Agent failed: {exc}",
                     findings=[],
                     limitations=[f"Agent error: {exc}"],
@@ -85,7 +85,7 @@ class ReviewPipeline:
                     self.agent_results.append(result)
                 except Exception as exc:
                     agent = futures[future]
-                    name = agent.AGENT_NAME if hasattr(agent, "AGENT_NAME") else "unknown"
+                    name = agent.name if hasattr(agent, "name") else "unknown"
                     self.failed_agents.append(name)
 
         if self.failed_agents and not self.agent_results:
@@ -156,7 +156,7 @@ def review_document(document: Document, parallel: bool = False,
 
     agent_results: List[AgentResult] = []
     for i, agent in enumerate(AGENTS):
-        name = agent.AGENT_NAME if hasattr(agent, "AGENT_NAME") else "unknown"
+        name = agent.name if hasattr(agent, "name") else "unknown"
         try:
             result = agent.analyze(document)
             agent_results.append(result)

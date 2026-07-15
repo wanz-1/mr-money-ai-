@@ -15,6 +15,7 @@ load_env()
 import hashlib
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -41,6 +42,7 @@ USER_AGENT = _env(
 DDG_URL = "https://html.duckduckgo.com/html/"
 _CACHE_TTL = int(_env("HP_SEARCH_CACHE_TTL", "3600"))
 _search_cache: Dict[str, tuple] = {}
+_search_cache_lock = threading.Lock()
 
 
 def _cache_key(query: str, max_results: int) -> str:
@@ -119,10 +121,11 @@ def web_search(query: str, max_results: int = 5) -> List[SearchResult]:
     """
     key = _cache_key(query, max_results)
     now = time.time()
-    if key in _search_cache:
-        cached_time, cached_results = _search_cache[key]
-        if now - cached_time < _CACHE_TTL:
-            return cached_results
+    with _search_cache_lock:
+        if key in _search_cache:
+            cached_time, cached_results = _search_cache[key]
+            if now - cached_time < _CACHE_TTL:
+                return cached_results
 
     params = urllib.parse.urlencode({"q": query})
     url = f"{DDG_URL}?{params}"
@@ -154,9 +157,10 @@ def web_search(query: str, max_results: int = 5) -> List[SearchResult]:
         if title or snippet:
             results.append(SearchResult(title=title, url=href, snippet=snippet))
 
-    if len(_search_cache) > 500:
-        _search_cache.clear()
-    _search_cache[key] = (time.time(), results[:max_results])
+    with _search_cache_lock:
+        if len(_search_cache) > 500:
+            _search_cache.clear()
+        _search_cache[key] = (time.time(), results[:max_results])
     return results[:max_results]
 
 

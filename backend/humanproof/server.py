@@ -561,7 +561,7 @@ class HumanProofHandler(BaseHTTPRequestHandler):
         try:
             from . import database
             if database.is_available() and mw.auth_context.org_id:
-                params = dict(p.split("=") for p in query.split("&") if "=" in p) if query else {}
+                params = dict(p.split("=", 1) for p in query.split("&") if "=" in p) if query else {}
                 limit = int(params.get("limit", "50"))
                 offset = int(params.get("offset", "0"))
                 ws_id = params.get("workspaceId")
@@ -946,7 +946,7 @@ class HumanProofHandler(BaseHTTPRequestHandler):
         try:
             from . import database
             if database.is_available() and mw.auth_context.org_id:
-                params = dict(p.split("=") for p in query.split("&") if "=" in p) if query else {}
+                params = dict(p.split("=", 1) for p in query.split("&") if "=" in p) if query else {}
                 limit = int(params.get("limit", "100"))
                 logs = database.list_audit_logs(mw.auth_context.org_id, limit)
                 self._send_json({"logs": logs})
@@ -1449,7 +1449,7 @@ class HumanProofHandler(BaseHTTPRequestHandler):
         try:
             from . import database
             if database.is_available() and mw.auth_context.org_id:
-                params = dict(p.split("=") for p in query.split("&") if "=" in p) if query else {}
+                params = dict(p.split("=", 1) for p in query.split("&") if "=" in p) if query else {}
                 category = params.get("category")
                 entries = database.list_knowledge_entries(mw.auth_context.org_id, category)
                 self._send_json({"entries": entries})
@@ -1644,7 +1644,7 @@ class HumanProofHandler(BaseHTTPRequestHandler):
         try:
             from . import database
             if database.is_available() and mw.auth_context.org_id:
-                params = dict(p.split("=") for p in query.split("&") if "=" in p) if query else {}
+                params = dict(p.split("=", 1) for p in query.split("&") if "=" in p) if query else {}
                 doc_id = params.get("documentId")
                 citations = database.list_citations(mw.auth_context.org_id, doc_id)
                 self._send_json({"citations": citations})
@@ -1846,6 +1846,15 @@ class HumanProofHandler(BaseHTTPRequestHandler):
             candidate = candidate / "index.html"
         if not candidate.exists():
             self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
+            return
+
+        content_type = mimetypes.guess_type(str(candidate))[0] or "application/octet-stream"
+        self.send_response(HTTPStatus.OK)
+        self._headers(content_type)
+        if relative in ("sw.js",):
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.end_headers()
+        self.wfile.write(candidate.read_bytes())
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
@@ -1892,7 +1901,10 @@ class HumanProofHandler(BaseHTTPRequestHandler):
     MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
 
     def _read_raw_body(self) -> bytes | None:
-        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            length = int(self.headers.get("Content-Length", "0") or "0")
+        except (ValueError, TypeError):
+            length = 0
         if length > self.MAX_BODY_SIZE:
             self._send_json({"error": "Request body too large. Max 10 MB."}, HTTPStatus.BAD_REQUEST)
             return None

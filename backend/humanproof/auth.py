@@ -31,7 +31,7 @@ JWT_EXPIRY_SECONDS = int(os.environ.get("HP_JWT_EXPIRY", "3600"))
 JWT_REFRESH_EXPIRY_SECONDS = int(os.environ.get("HP_JWT_REFRESH_EXPIRY", "86400"))
 JWT_ISSUER = os.environ.get("HP_JWT_ISSUER", "mr-money-ai")
 
-_TOKEN_BLACKLIST: Set[str] = set()
+_TOKEN_BLACKLIST: Dict[str, float] = {}
 _MAX_BLACKLIST = 10000
 
 _PASSWORD_MIN_LENGTH = 8
@@ -53,9 +53,11 @@ def _is_strong_password(password: str) -> Tuple[bool, str]:
 
 
 def blacklist_token(token_id: str) -> None:
+    _TOKEN_BLACKLIST[token_id] = time.time()
     if len(_TOKEN_BLACKLIST) >= _MAX_BLACKLIST:
-        _TOKEN_BLACKLIST.clear()
-    _TOKEN_BLACKLIST.add(token_id)
+        oldest = sorted(_TOKEN_BLACKLIST, key=_TOKEN_BLACKLIST.get)[:_MAX_BLACKLIST // 2]
+        for k in oldest:
+            _TOKEN_BLACKLIST.pop(k, None)
 
 
 def is_token_blacklisted(token_id: str) -> bool:

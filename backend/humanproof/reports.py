@@ -391,8 +391,8 @@ def _severity_bar_chart(report: ReviewReport) -> str:
         bars.append(f"0.8 {int(color[0:2],16)/255:.2f} {int(color[2:4],16)/255:.2f} {int(color[4:6],16)/255:.2f} rg")
         bars.append(f"50 {y} {bar_width} 12 re f")
         bars.append(f"0 0 0 rg")
-        bars.append(f"/F1 10 Tf 260 {y + 3} Td ({sev}: {count}) Tj ET")
         bars.append("BT")
+        bars.append(f"/F1 10 Tf 260 {y + 3} Td ({sev}: {count}) Tj ET")
         y -= 20
     return "\n".join(bars) if bars else ""
 
