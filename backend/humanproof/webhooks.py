@@ -134,6 +134,22 @@ class WebhookManager:
                 return delivery
         return None
 
+    def get_delivery_stats(self, org_id: str) -> Dict[str, Any]:
+        org_deliveries = [d for d in self._deliveries if any(
+            s.org_id == org_id for s in self._subscriptions.values() if s.id == d.webhook_id
+        )]
+        total = len(org_deliveries)
+        delivered = sum(1 for d in org_deliveries if d.status == "delivered")
+        failed = sum(1 for d in org_deliveries if d.status == "failed")
+        pending = sum(1 for d in org_deliveries if d.status == "pending")
+        return {
+            "total": total,
+            "delivered": delivered,
+            "failed": failed,
+            "pending": pending,
+            "success_rate": round(delivered / total, 3) if total > 0 else 0.0,
+        }
+
     def _delivery_loop(self) -> None:
         while self._running:
             deliveries = []
@@ -157,6 +173,7 @@ class WebhookManager:
             "data": delivery.payload,
             "deliveryId": delivery.id,
             "timestamp": delivery.created_at,
+            "attempt": delivery.attempts,
         }, default=str).encode("utf-8")
 
         signature = hmac.new(sub.signing_secret.encode(), body, hashlib.sha256).hexdigest()
@@ -169,7 +186,7 @@ class WebhookManager:
                     "Content-Type": "application/json",
                     "X-Webhook-Signature": f"sha256={signature}",
                     "X-Webhook-Event": delivery.event_type,
-                    "User-Agent": "MrMoneyAI-Webhook/0.2",
+                    "User-Agent": "MrMoneyAI-Webhook/0.3",
                 },
                 method="POST",
             )
@@ -180,15 +197,19 @@ class WebhookManager:
         except URLError as exc:
             delivery.status_code = getattr(exc, "code", 0)
             delivery.error = str(exc)
-            if delivery.attempts < 3:
-                with self._lock:
-                    self._delivery_queue.append(delivery)
-            else:
-                delivery.status = "failed"
+            self._schedule_retry(delivery)
         except Exception as exc:
             delivery.error = str(exc)
-            if delivery.attempts < 3:
-                with self._lock:
-                    self._delivery_queue.append(delivery)
-            else:
-                delivery.status = "failed"
+            self._schedule_retry(delivery)
+
+    def _schedule_retry(self, delivery: WebhookDelivery) -> None:
+        max_attempts = 5
+        if delivery.attempts < max_attempts:
+            delay = min(2 ** delivery.attempts, 300)
+            threading.Timer(delay, self._requeue, args=[delivery]).start()
+        else:
+            delivery.status = "failed"
+
+    def _requeue(self, delivery: WebhookDelivery) -> None:
+        with self._lock:
+            self._delivery_queue.append(delivery)

@@ -54,7 +54,7 @@
     <!-- Sidebar -->
     <nav class="sidebar" :class="{ 'sidebar-collapsed': $store.app.sidebarCollapsed }" role="navigation" aria-label="Main navigation">
       <div class="sidebar-brand">
-        <div class="brand-icon">HP</div>
+        <div class="brand-icon">MM</div>
         <span class="brand-text" x-show="!$store.app.sidebarCollapsed">Mr Money AI</span>
       </div>
 
@@ -118,7 +118,7 @@
         <div class="topbar-right">
           <label class="api-field compact">
             <span>API</span>
-            <input type="url" x-model="$store.app.apiBase" @change="localStorage.setItem('hp_api_base', $store.app.apiBase)" autocomplete="off">
+            <input type="url" x-model="$store.app.apiBase" @change="localStorage.setItem('mm_api_base', $store.app.apiBase)" autocomplete="off">
           </label>
           <button class="icon-btn" @click="$store.app.toggleTheme()" :title="$store.app.darkMode ? 'Light mode' : 'Dark mode'">
             <template x-if="!$store.app.darkMode">
@@ -194,9 +194,9 @@
 
               <template x-if="$store.review.report">
                 <div class="results-content">
-                  <!-- Dashboard top -->
-                  <div class="dashboard-top">
-                    <div class="readiness-block">
+                  <!-- Dashboard overview -->
+                  <div class="dashboard-overview">
+                    <div class="dash-card dash-readiness">
                       <p class="eyebrow">Publication Readiness</p>
                       <div class="gauge-ring">
                         <svg viewBox="0 0 120 120" class="gauge-svg">
@@ -207,11 +207,63 @@
                         <span class="gauge-value" x-text="$store.review.score('publication_readiness')"></span>
                       </div>
                     </div>
-                    <div class="report-actions">
-                      <button class="secondary sm" @click="$store.review.download('pdf')">PDF</button>
-                      <button class="secondary sm" @click="$store.review.download('docx')">DOCX</button>
-                      <button class="secondary sm" @click="$store.review.download('html')">HTML</button>
-                      <button class="secondary sm" @click="$store.review.download('md')">MD</button>
+                    <div class="dash-card dash-stats">
+                      <div class="stat-row">
+                        <span class="stat-label">Findings</span>
+                        <span class="stat-value" x-text="($store.review.report.findings || []).length"></span>
+                      </div>
+                      <div class="stat-row">
+                        <span class="stat-label">Critical</span>
+                        <span class="stat-value stat-critical" x-text="($store.review.report.findings || []).filter(f => f.severity === 'critical').length"></span>
+                      </div>
+                      <div class="stat-row">
+                        <span class="stat-label">High</span>
+                        <span class="stat-value stat-high" x-text="($store.review.report.findings || []).filter(f => f.severity === 'high').length"></span>
+                      </div>
+                      <div class="stat-row">
+                        <span class="stat-label">Agents</span>
+                        <span class="stat-value" x-text="($store.review.report.agents || []).length"></span>
+                      </div>
+                    </div>
+                    <div class="dash-card dash-severity">
+                      <p class="eyebrow">Severity Breakdown</p>
+                      <div class="severity-bars">
+                        <template x-for="sev in ['critical','high','medium','low','info']" :key="sev">
+                          <div class="sev-bar-row" x-show="($store.review.report.findings || []).filter(f => f.severity === sev).length > 0">
+                            <span class="sev-label" x-text="sev"></span>
+                            <div class="sev-bar-track">
+                              <div class="sev-bar-fill" :class="'sev-' + sev"
+                                   :style="'width:' + (Math.min(100, (($store.review.report.findings || []).filter(f => f.severity === sev).length / Math.max(1, ($store.review.report.findings || []).length)) * 100)) + '%'"></div>
+                            </div>
+                            <span class="sev-count" x-text="($store.review.report.findings || []).filter(f => f.severity === sev).length"></span>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                    <div class="dash-card dash-actions-quick">
+                      <p class="eyebrow">Export</p>
+                      <div class="export-btns">
+                        <button class="export-btn" @click="$store.review.download('pdf')">
+                          <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>
+                          PDF
+                        </button>
+                        <button class="export-btn" @click="$store.review.download('docx')">
+                          <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>
+                          DOCX
+                        </button>
+                        <button class="export-btn" @click="$store.review.download('html')">
+                          <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                          HTML
+                        </button>
+                        <button class="export-btn" @click="$store.review.download('md')">
+                          <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm11 1H6v3l2.5-1.5L11 9V6zm-5 5v3l2.5-1.5L8 11v3" clip-rule="evenodd"/></svg>
+                          MD
+                        </button>
+                        <button class="export-btn" @click="$store.review.download('csv')">
+                          <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11 4a1 1 0 10-2 0v4a1 1 0 102 0V7zm-3 1a1 1 0 10-2 0v3a1 1 0 102 0V8zM8 9a1 1 0 00-2 0v2a1 1 0 102 0V9z" clip-rule="evenodd"/></svg>
+                          CSV
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -410,7 +462,10 @@
                 </template>
               </div>
               <div class="modal-footer">
-                <button @click="$store.templates.generateFromPreview()">Generate Template</button>
+                <button @click="$store.templates.generateFromPreview()">
+                  <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="margin-right:4px"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                  Download as Word
+                </button>
                 <button class="secondary" @click="$store.templates.previewType = null">Close</button>
               </div>
             </div>
@@ -747,7 +802,7 @@
   <div class="auth-wrapper" x-show="!$store.auth.loggedIn">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="brand-icon large">HP</div>
+        <div class="brand-icon large">MM</div>
         <h1>Mr Money AI</h1>
         <p class="muted">Document Intelligence Platform</p>
       </div>

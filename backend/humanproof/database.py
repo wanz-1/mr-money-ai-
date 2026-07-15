@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import functools
 import json
+import logging
 import os
 import uuid
 from contextlib import contextmanager
@@ -18,9 +20,12 @@ except ImportError:
 
 from .models import utc_now
 
+logger = logging.getLogger("humanproof.database")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 _pool: Optional[Any] = None
+_permission_cache: Dict[str, Tuple[List[str], float]] = {}
+_PERMISSION_CACHE_TTL = 300
 
 
 @dataclass
@@ -32,7 +37,7 @@ class DBConfig:
 
     @classmethod
     def from_env(cls) -> DBConfig:
-        return cls(dsn=DATABASE_URL or os.environ.get("PG_DSN", "postgresql://localhost:5432/humanproof"))
+        return cls(dsn=DATABASE_URL or os.environ.get("PG_DSN", "postgresql://localhost:5432/mrmoney"))
 
 
 def init_pool(config: Optional[DBConfig] = None) -> None:
@@ -85,6 +90,20 @@ def get_cursor(conn: Any, name: Optional[str] = None) -> Generator[Any, None, No
 
 def is_available() -> bool:
     return psycopg2 is not None and _pool is not None
+
+
+def health_check() -> Dict[str, Any]:
+    if not is_available():
+        return {"status": "unavailable", "reason": "pool not initialized"}
+    try:
+        with get_connection() as conn:
+            with get_cursor(conn) as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        return {"status": "healthy", "pool": "ok"}
+    except Exception as exc:
+        logger.error("Database health check failed: %s", exc)
+        return {"status": "unhealthy", "error": str(exc)}
 
 
 def _new_id() -> str:
@@ -216,6 +235,11 @@ def get_user_roles(user_id: str) -> List[Dict[str, Any]]:
 
 
 def get_user_permissions(user_id: str) -> List[str]:
+    import time
+    now = time.time()
+    cached = _permission_cache.get(user_id)
+    if cached and (now - cached[1]) < _PERMISSION_CACHE_TTL:
+        return cached[0]
     roles = get_user_roles(user_id)
     permissions: set = set()
     for role in roles:
@@ -223,7 +247,16 @@ def get_user_permissions(user_id: str) -> List[str]:
         if isinstance(perms, str):
             perms = json.loads(perms)
         permissions.update(perms)
-    return sorted(permissions)
+    result = sorted(permissions)
+    _permission_cache[user_id] = (result, now)
+    return result
+
+
+def invalidate_permission_cache(user_id: Optional[str] = None) -> None:
+    if user_id:
+        _permission_cache.pop(user_id, None)
+    else:
+        _permission_cache.clear()
 
 
 # ---------------------------------------------------------------------------

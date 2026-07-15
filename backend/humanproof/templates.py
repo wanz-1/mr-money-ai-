@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import io
+import re
+import zipfile
 from dataclasses import dataclass, field
+from html import escape
 from typing import Dict, List, Optional
 
 
@@ -265,7 +269,194 @@ def generate_template_content(template_type: str) -> Optional[str]:
             for sub in section.subsections:
                 lines.append(f"### {sub.name}")
                 lines.append(f"*{sub.description}*")
+                if sub.guidance:
+                    lines.append(f"**Guidance:** {sub.guidance}")
+                if sub.min_words:
+                    lines.append(f"*Target: {sub.min_words}+ words*")
                 lines.append("")
         lines.append("[Your content here]")
         lines.append("")
     return "\n".join(lines)
+
+
+@dataclass
+class TemplateValidationResult:
+    valid: bool
+    template_type: str
+    sections_found: List[str]
+    sections_missing: List[str]
+    sections_required_missing: List[str]
+    word_counts: Dict[str, int]
+    word_targets_met: Dict[str, bool]
+    overall_word_count: int
+    target_words: int
+    citation_style: str
+    issues: List[str]
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "valid": self.valid,
+            "templateType": self.template_type,
+            "sectionsFound": self.sections_found,
+            "sectionsMissing": self.sections_missing,
+            "sectionsRequiredMissing": self.sections_required_missing,
+            "wordCounts": self.word_counts,
+            "wordTargetsMet": self.word_targets_met,
+            "overallWordCount": self.overall_word_count,
+            "targetWords": self.target_words,
+            "citationStyle": self.citation_style,
+            "issues": self.issues,
+        }
+
+
+def validate_document(text: str, template_type: str) -> Optional[TemplateValidationResult]:
+    template = get_template(template_type)
+    if not template:
+        return None
+    headings = re.findall(r"^#{1,6}\s+(.+)$", text, re.M)
+    headings_lower = {h.lower().strip() for h in headings}
+    sections_found: List[str] = []
+    sections_missing: List[str] = []
+    sections_required_missing: List[str] = []
+    word_counts: Dict[str, int] = {}
+    word_targets_met: Dict[str, bool] = {}
+    issues: List[str] = []
+    total_words = len(text.split())
+
+    for section in template.sections:
+        name_lower = section.name.lower().strip()
+        matched = any(name_lower in h for h in headings_lower)
+        if matched:
+            sections_found.append(section.name)
+            section_pattern = re.compile(
+                rf"(?:^|\n)##?\s+.*{re.escape(section.name)}.*?\n(.*?)(?=\n##?\s+|\Z)",
+                re.S | re.I,
+            )
+            m = section_pattern.search(text)
+            section_text = m.group(1) if m else ""
+            wc = len(section_text.split())
+            word_counts[section.name] = wc
+            met = wc >= section.min_words if section.min_words else True
+            word_targets_met[section.name] = met
+            if not met:
+                issues.append(f"Section '{section.name}' has {wc} words, target is {section.min_words}+")
+        else:
+            sections_missing.append(section.name)
+            word_counts[section.name] = 0
+            word_targets_met[section.name] = False
+            if section.required:
+                sections_required_missing.append(section.name)
+                issues.append(f"Required section '{section.name}' is missing")
+
+    if sections_required_missing:
+        issues.append(f"{len(sections_required_missing)} required section(s) missing")
+    if total_words < template.target_words * 0.5:
+        issues.append(f"Document is significantly shorter than target ({total_words}/{template.target_words} words)")
+
+    return TemplateValidationResult(
+        valid=len(sections_required_missing) == 0 and total_words >= template.target_words * 0.5,
+        template_type=template_type,
+        sections_found=sections_found,
+        sections_missing=sections_missing,
+        sections_required_missing=sections_required_missing,
+        word_counts=word_counts,
+        word_targets_met=word_targets_met,
+        overall_word_count=total_words,
+        target_words=template.target_words,
+        citation_style=template.citation_style,
+        issues=issues,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DOCX generation
+# ---------------------------------------------------------------------------
+
+def _docx_paragraph_xml(text: str, style: str = "Normal") -> str:
+    style_xml = ""
+    if style == "Title":
+        style_xml = '<w:pPr><w:pStyle w:val="Title"/></w:pPr>'
+    elif style == "Heading1":
+        style_xml = '<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>'
+    elif style == "Heading2":
+        style_xml = '<w:pPr><w:pStyle w:val="Heading2"/></w:pPr>'
+    elif style == "Heading3":
+        style_xml = '<w:pPr><w:pStyle w:val="Heading3"/></w:pPr>'
+    elif style == "Subtitle":
+        style_xml = '<w:pPr><w:pStyle w:val="Subtitle"/></w:pPr>'
+    elif style == "IntenseQuote":
+        style_xml = '<w:pPr><w:pStyle w:val="IntenseQuote"/></w:pPr>'
+    escaped = escape(text).replace("\n", "</w:t><w:br/><w:t>")
+    return f'<w:p>{style_xml}<w:r><w:t xml:space="preserve">{escaped}</w:t></w:r></w:p>'
+
+
+def _docx_document_xml(paragraphs: list) -> str:
+    body = "".join(_docx_paragraph_xml(text, style) for text, style in paragraphs)
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'<w:body>{body}<w:sectPr>'
+        '<w:pgSz w:w="12240" w:h="15840"/>'
+        '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720"/>'
+        '</w:sectPr></w:body></w:document>'
+    )
+
+
+def _docx_content_types() -> str:
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"""
+
+
+def _docx_rels() -> str:
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>"""
+
+
+def generate_template_docx(template_type: str) -> Optional[bytes]:
+    """Generate a .docx file from a template type. Returns bytes or None."""
+    template = get_template(template_type)
+    if not template:
+        return None
+
+    paragraphs: list = []
+    paragraphs.append((template.name, "Title"))
+    paragraphs.append((template.description, "Subtitle"))
+    paragraphs.append((f"Target: {template.target_words} words  |  Citation: {template.citation_style.upper()}", "Normal"))
+    paragraphs.append(("", "Normal"))
+
+    for section in template.sections:
+        paragraphs.append((section.name, "Heading1"))
+        paragraphs.append((section.description, "Normal"))
+        if section.guidance:
+            paragraphs.append((f"Guidance: {section.guidance}", "IntenseQuote"))
+        if section.min_words:
+            target = f"Target: {section.min_words}+ words"
+            if section.max_words:
+                target += f" (max {section.max_words})"
+            paragraphs.append((target, "Normal"))
+        paragraphs.append(("[Your content here]", "Normal"))
+        paragraphs.append(("", "Normal"))
+
+        for sub in section.subsections:
+            paragraphs.append((sub.name, "Heading2"))
+            paragraphs.append((sub.description, "Normal"))
+            if sub.guidance:
+                paragraphs.append((f"Guidance: {sub.guidance}", "IntenseQuote"))
+            if sub.min_words:
+                paragraphs.append((f"Target: {sub.min_words}+ words", "Normal"))
+            paragraphs.append(("[Your content here]", "Normal"))
+            paragraphs.append(("", "Normal"))
+
+    document_xml = _docx_document_xml(paragraphs)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as docx:
+        docx.writestr("[Content_Types].xml", _docx_content_types())
+        docx.writestr("_rels/.rels", _docx_rels())
+        docx.writestr("word/document.xml", document_xml)
+    return buffer.getvalue()

@@ -23,6 +23,7 @@ class Comment:
     created_at: str = field(default_factory=utc_now)
     resolved_at: Optional[str] = None
     replies: List["Comment"] = field(default_factory=list)
+    parent_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -36,6 +37,7 @@ class Comment:
             "status": self.status,
             "createdAt": self.created_at,
             "resolvedAt": self.resolved_at,
+            "parentId": self.parent_id,
             "replies": [r.to_dict() for r in self.replies],
         }
 
@@ -51,6 +53,8 @@ class ApprovalStep:
     decision_note: Optional[str] = None
     decided_at: Optional[str] = None
     created_at: str = field(default_factory=utc_now)
+    due_date: Optional[str] = None
+    sla_hours: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -63,6 +67,8 @@ class ApprovalStep:
             "decisionNote": self.decision_note,
             "decidedAt": self.decided_at,
             "createdAt": self.created_at,
+            "dueDate": self.due_date,
+            "slaHours": self.sla_hours,
         }
 
 
@@ -111,6 +117,28 @@ class CollaborationManager:
         )
         self._comments.setdefault(document_id, []).append(comment)
         return comment
+
+    def reply_to_comment(
+        self,
+        document_id: str,
+        parent_comment_id: str,
+        author_id: str,
+        author_name: str,
+        body: str,
+    ) -> Optional[Comment]:
+        for comment in self._comments.get(document_id, []):
+            if comment.id == parent_comment_id:
+                reply = Comment(
+                    id=str(uuid.uuid4()),
+                    document_id=document_id,
+                    author_id=author_id,
+                    author_name=author_name,
+                    body=body,
+                    parent_id=parent_comment_id,
+                )
+                comment.replies.append(reply)
+                return reply
+        return None
 
     def resolve_comment(self, comment_id: str) -> bool:
         for comments in self._comments.values():

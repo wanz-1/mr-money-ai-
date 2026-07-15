@@ -1,4 +1,4 @@
-const CACHE_NAME = "humanproof-v1";
+const CACHE_NAME = "mrmoney-v1";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -9,7 +9,7 @@ const STATIC_ASSETS = [
   "/icons/icon-512.svg",
 ];
 
-const API_CACHE = "humanproof-api-v1";
+const API_CACHE = "mrmoney-api-v1";
 const API_CACHE_DURATION = 60 * 1000;
 
 self.addEventListener("install", (event) => {
@@ -34,6 +34,10 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
+  if (request.method === "POST") {
+    event.respondWith(handleOfflineMutation(request));
+    return;
+  }
   if (request.method !== "GET") return;
 
   if (url.pathname.startsWith("/api/")) {
@@ -97,4 +101,20 @@ async function networkFirstWithCache(request) {
 
 async function networkOnly(request) {
   return fetch(request);
+}
+
+async function handleOfflineMutation(request) {
+  try {
+    const response = await fetch(request.clone());
+    return response;
+  } catch {
+    const body = await request.clone().text();
+    const pending = JSON.parse(localStorage.getItem("mm_offline_queue") || "[]");
+    pending.push({ url: request.url, method: request.method, body, timestamp: Date.now() });
+    localStorage.setItem("mm_offline_queue", JSON.stringify(pending));
+    return new Response(JSON.stringify({ error: "Offline — request queued" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 }

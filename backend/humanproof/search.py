@@ -12,8 +12,10 @@ from __future__ import annotations
 from .config import load_env
 load_env()
 
+import hashlib
 import os
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -37,6 +39,12 @@ USER_AGENT = _env(
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 )
 DDG_URL = "https://html.duckduckgo.com/html/"
+_CACHE_TTL = int(_env("HP_SEARCH_CACHE_TTL", "3600"))
+_search_cache: Dict[str, tuple] = {}
+
+
+def _cache_key(query: str, max_results: int) -> str:
+    return hashlib.sha256(f"{query}:{max_results}".encode()).hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +117,13 @@ def web_search(query: str, max_results: int = 5) -> List[SearchResult]:
     Returns up to *max_results* :class:`SearchResult` objects sorted by
     relevance.  Returns an empty list on failure instead of raising.
     """
+    key = _cache_key(query, max_results)
+    now = time.time()
+    if key in _search_cache:
+        cached_time, cached_results = _search_cache[key]
+        if now - cached_time < _CACHE_TTL:
+            return cached_results
+
     params = urllib.parse.urlencode({"q": query})
     url = f"{DDG_URL}?{params}"
 
@@ -139,6 +154,9 @@ def web_search(query: str, max_results: int = 5) -> List[SearchResult]:
         if title or snippet:
             results.append(SearchResult(title=title, url=href, snippet=snippet))
 
+    if len(_search_cache) > 500:
+        _search_cache.clear()
+    _search_cache[key] = (time.time(), results[:max_results])
     return results[:max_results]
 
 

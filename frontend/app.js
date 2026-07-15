@@ -45,7 +45,7 @@ document.addEventListener("alpine:init", () => {
     busy: false,
 
     init() {
-      const saved = localStorage.getItem("hp_auth");
+      const saved = localStorage.getItem("mm_auth");
       if (saved) {
         try {
           const data = JSON.parse(saved);
@@ -59,11 +59,11 @@ document.addEventListener("alpine:init", () => {
 
     _persist() {
       if (this.loggedIn) {
-        localStorage.setItem("hp_auth", JSON.stringify({
+        localStorage.setItem("mm_auth", JSON.stringify({
           user: this.user, token: this.token, refreshToken: this.refreshToken,
         }));
       } else {
-        localStorage.removeItem("hp_auth");
+        localStorage.removeItem("mm_auth");
       }
     },
 
@@ -142,8 +142,8 @@ document.addEventListener("alpine:init", () => {
 
   // ── App store ──
   Alpine.store("app", {
-    apiBase: localStorage.getItem("hp_api_base") || window.location.origin,
-    darkMode: localStorage.getItem("hp_dark") === "true",
+    apiBase: localStorage.getItem("mm_api_base") || window.location.origin,
+    darkMode: localStorage.getItem("mm_dark") === "true",
     page: "review",
     pageTitle: "Document Review",
     sidebarCollapsed: window.innerWidth < 768,
@@ -174,7 +174,7 @@ document.addEventListener("alpine:init", () => {
 
     toggleTheme() {
       this.darkMode = !this.darkMode;
-      localStorage.setItem("hp_dark", this.darkMode);
+      localStorage.setItem("mm_dark", this.darkMode);
       if (this.darkMode) {
         document.documentElement.classList.add("dark");
       } else {
@@ -380,13 +380,26 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
       this.previewData = this.items.find(t => t.type === type) || null;
     },
 
-    generateFromPreview() {
-      if (this.previewData) {
-        Alpine.store("review").navigate("review");
-        Alpine.store("review").text = `# ${this.previewData.name}\n\n${this.previewData.sections.map(s => `## ${s.name}\n*${s.description}*\n[Your content here]\n`).join("\n")}`;
-        Alpine.store("toast").show("Template loaded into review workspace", "success");
-      }
+    async generateFromPreview() {
+      if (!this.previewData) return;
+      const type = this.previewData.type;
+      const name = this.previewData.name;
       this.previewType = null;
+      try {
+        const base = Alpine.store("app").apiBase;
+        const resp = await fetch(`${base}/api/templates/${type}/docx`);
+        if (!resp.ok) throw new Error(`Download failed (${resp.status})`);
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${name.replace(/\s+/g, "_").toLowerCase()}_template.docx`;
+        a.click();
+        URL.revokeObjectURL(url);
+        Alpine.store("toast").show(`${name} template downloaded as Word document`, "success");
+      } catch (e) {
+        Alpine.store("toast").show(e.message, "error");
+      }
     },
   });
 

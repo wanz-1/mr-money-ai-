@@ -72,8 +72,24 @@ ROLE_PERMISSIONS: Dict[Role, FrozenSet[Permission]] = {
 }
 
 
+ROLE_INHERITANCE: Dict[Role, List[Role]] = {
+    Role.VIEWER: [],
+    Role.REVIEWER: [Role.VIEWER],
+    Role.EDITOR: [Role.REVIEWER],
+    Role.ADMIN: [Role.EDITOR],
+    Role.ORG_ADMIN: [Role.ADMIN],
+}
+
+
 def get_permissions_for_role(role: Role) -> Set[Permission]:
-    return set(ROLE_PERMISSIONS.get(role, set()))
+    perms: Set[Permission] = set(ROLE_PERMISSIONS.get(role, frozenset()))
+    for parent_role in ROLE_INHERITANCE.get(role, []):
+        perms |= get_permissions_for_role(parent_role)
+    return perms
+
+
+def get_roles_with_permission(permission: Permission) -> Set[Role]:
+    return {role for role, perms in ROLE_PERMISSIONS.items() if permission in perms}
 
 
 def has_permission(user_permissions: List[str], required: Permission) -> bool:
@@ -82,6 +98,13 @@ def has_permission(user_permissions: List[str], required: Permission) -> bool:
 
 def has_any_permission(user_permissions: List[str], *required: Permission) -> bool:
     return any(perm.value in user_permissions for perm in required)
+
+
+def has_scope_permission(user_permissions: Set[str], resource_scope: str, permission: Permission) -> bool:
+    if permission.value in user_permissions:
+        return True
+    scoped_key = f"{permission.value}:{resource_scope}"
+    return scoped_key in user_permissions
 
 
 def check_document_access(

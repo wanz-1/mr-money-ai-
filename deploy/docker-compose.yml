@@ -10,7 +10,7 @@ services:
     environment:
       - HP_HOST=0.0.0.0
       - HP_PORT=8765
-      - DATABASE_URL=postgresql://humanproof:${POSTGRES_PASSWORD:-humanproof_secret}@db:5432/humanproof
+      - DATABASE_URL=postgresql://mrmoney:${POSTGRES_PASSWORD:-mrmoney_secret}@db:5432/mrmoney
     depends_on:
       db:
         condition: service_healthy
@@ -24,14 +24,14 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: humanproof
-      POSTGRES_USER: humanproof
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-humanproof_secret}
+      POSTGRES_DB: mrmoney
+      POSTGRES_USER: mrmoney
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mrmoney_secret}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ../database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U humanproof"]
+      test: ["CMD-SHELL", "pg_isready -U mrmoney"]
       interval: 10s
       timeout: 5s
       retries: 5

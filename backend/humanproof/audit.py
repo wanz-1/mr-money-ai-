@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import threading
 import time
 from collections import deque
@@ -10,9 +12,11 @@ from typing import Any, Deque, Dict, Optional
 
 from .models import utc_now
 
+logger = logging.getLogger("humanproof.audit")
+
 
 class AuditEvent:
-    __slots__ = ("org_id", "actor_id", "action", "resource_type", "resource_id", "ip_address", "user_agent", "metadata", "timestamp")
+    __slots__ = ("org_id", "actor_id", "action", "resource_type", "resource_id", "ip_address", "user_agent", "metadata", "timestamp", "level")
 
     def __init__(
         self,
@@ -24,6 +28,7 @@ class AuditEvent:
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        level: str = "info",
     ) -> None:
         self.org_id = org_id
         self.actor_id = actor_id
@@ -34,6 +39,7 @@ class AuditEvent:
         self.user_agent = user_agent
         self.metadata = metadata or {}
         self.timestamp = utc_now()
+        self.level = level
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -46,12 +52,15 @@ class AuditEvent:
             "userAgent": self.user_agent,
             "metadata": self.metadata,
             "timestamp": self.timestamp,
+            "level": self.level,
         }
 
 
 class AuditLogger:
+    MAX_BUFFER_SIZE = 10000
+
     def __init__(self, flush_interval: float = 5.0, batch_size: int = 50) -> None:
-        self._buffer: Deque[AuditEvent] = deque()
+        self._buffer: Deque[AuditEvent] = deque(maxlen=self.MAX_BUFFER_SIZE)
         self._lock = threading.Lock()
         self._flush_interval = flush_interval
         self._batch_size = batch_size
@@ -98,7 +107,7 @@ class AuditLogger:
                         org_id=event.org_id,
                         action=event.action,
                         resource_type=event.resource_type,
-                        resource_id=event.event_id if hasattr(event, "event_id") else event.resource_id,
+                        resource_id=event.resource_id,
                         actor_id=event.actor_id,
                         ip_address=event.ip_address,
                         user_agent=event.user_agent,
@@ -108,9 +117,21 @@ class AuditLogger:
         except Exception:
             pass
 
+        log_file = os.environ.get("HP_AUDIT_LOG_FILE")
+        if log_file:
+            try:
+                with open(log_file, "a", encoding="utf-8") as f:
+                    for event in events:
+                        line = json.dumps(event.to_dict(), ensure_ascii=True, default=str)
+                        f.write(line + "\n")
+                return
+            except Exception:
+                pass
+
         for event in events:
             line = json.dumps(event.to_dict(), ensure_ascii=True, default=str)
-            print(f"[AUDIT] {line}")
+            log_level = {"info": "INFO", "warning": "WARNING", "error": "ERROR", "critical": "CRITICAL"}.get(event.level, "INFO")
+            getattr(logger, log_level.lower(), logger.info)(f"[AUDIT] {line}")
 
 
 _global_logger: Optional[AuditLogger] = None

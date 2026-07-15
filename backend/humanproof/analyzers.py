@@ -432,7 +432,7 @@ class FactCheckingAgent:
     def analyze(self, document: Document) -> AgentResult:
         text = document.text
         findings: List[Finding] = []
-        year_now = 2026
+        year_now = __import__("datetime").datetime.now().year
         stat_sentences = [
             sentence
             for sentence in sentences(text)
@@ -891,8 +891,8 @@ class VocabularyRichnessAgent:
             ))
 
         word_freq = Counter(all_words)
-        top重复 = [(w, c) for w, c in word_freq.most_common(20) if len(w) > 3 and c > len(all_words) * 0.03]
-        for word, count in top重复[:3]:
+        top_repeated = [(w, c) for w, c in word_freq.most_common(20) if len(w) > 3 and c > len(all_words) * 0.03]
+        for word, count in top_repeated[:3]:
             findings.append(Finding(
                 category="vocabulary",
                 severity="info",

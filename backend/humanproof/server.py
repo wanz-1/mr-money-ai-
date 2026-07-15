@@ -146,6 +146,10 @@ class HumanProofHandler(BaseHTTPRequestHandler):
             self._handle_list_templates()
             return
 
+        if path.startswith("/api/templates/") and path.endswith("/docx"):
+            self._handle_template_docx(path)
+            return
+
         if path.startswith("/api/reviews/"):
             self._handle_review_get(path)
             return
@@ -839,6 +843,24 @@ class HumanProofHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             logger.exception("Failed to list templates")
             self._send_json({"error": "Failed to load templates."}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _handle_template_docx(self, path: str) -> None:
+        try:
+            from .templates import generate_template_docx
+            template_type = path.split("/api/templates/")[1].replace("/docx", "")
+            docx_bytes = generate_template_docx(template_type)
+            if docx_bytes is None:
+                self._send_json({"error": f"Template '{template_type}' not found."}, HTTPStatus.NOT_FOUND)
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            self.send_header("Content-Disposition", f'attachment; filename="{template_type}_template.docx"')
+            self.send_header("Content-Length", str(len(docx_bytes)))
+            self.end_headers()
+            self.wfile.write(docx_bytes)
+        except Exception as exc:
+            logger.exception("Failed to generate template docx")
+            self._send_json({"error": "Failed to generate template."}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     # -----------------------------------------------------------------------
     # Audit log endpoint

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import csv
 import io
 import json
 import textwrap
 import zipfile
 from html import escape
-from typing import Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 from .models import Finding, ReviewReport
 
@@ -128,6 +129,40 @@ def report_as_docx(report: ReviewReport) -> bytes:
     return buffer.getvalue()
 
 
+def report_as_csv(report: ReviewReport) -> bytes:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["Category", "Severity", "Agent", "Title", "Message", "Recommendation", "Confidence"])
+    for finding in report.findings:
+        writer.writerow([
+            finding.category,
+            finding.severity,
+            finding.agent,
+            finding.title,
+            finding.message,
+            finding.recommendation,
+            finding.confidence,
+        ])
+    return buffer.getvalue().encode("utf-8")
+
+
+def get_chart_data(report: ReviewReport) -> Dict[str, Any]:
+    severity_counts: Dict[str, int] = {}
+    category_counts: Dict[str, int] = {}
+    agent_counts: Dict[str, int] = {}
+    for finding in report.findings:
+        severity_counts[finding.severity] = severity_counts.get(finding.severity, 0) + 1
+        category_counts[finding.category] = category_counts.get(finding.category, 0) + 1
+        agent_counts[finding.agent] = agent_counts.get(finding.agent, 0) + 1
+    return {
+        "scores": report.scores,
+        "severity_distribution": severity_counts,
+        "category_distribution": category_counts,
+        "agent_distribution": agent_counts,
+        "total_findings": len(report.findings),
+    }
+
+
 def report_as_pdf(report: ReviewReport) -> bytes:
     lines = [
         "Mr Money AI Review Report",
@@ -158,6 +193,7 @@ def export_report(report: ReviewReport, file_format: str) -> Tuple[bytes, str, s
         "html": (report_as_html, "text/html", "html"),
         "docx": (report_as_docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
         "pdf": (report_as_pdf, "application/pdf", "pdf"),
+        "csv": (report_as_csv, "text/csv", "csv"),
     }
     if normalized not in exporters:
         raise ValueError(f"Unsupported report format: {file_format}")

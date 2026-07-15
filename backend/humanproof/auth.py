@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
+import re
 import secrets
 import time
+import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 try:
     import bcrypt as _bcrypt
@@ -20,20 +23,43 @@ try:
 except ImportError:
     _jwt = None  # type: ignore[assignment]
 
+logger = logging.getLogger("humanproof.auth")
 
 JWT_SECRET = os.environ.get("HP_JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_SECONDS = int(os.environ.get("HP_JWT_EXPIRY", "3600"))
 JWT_REFRESH_EXPIRY_SECONDS = int(os.environ.get("HP_JWT_REFRESH_EXPIRY", "86400"))
+JWT_ISSUER = os.environ.get("HP_JWT_ISSUER", "mr-money-ai")
 
-if not JWT_SECRET:
-    import logging as _log
-    _log.warning(
-        "HP_JWT_SECRET is not set. Generating a random secret. "
-        "All tokens will be invalidated on restart. "
-        "Set HP_JWT_SECRET in your environment for stable tokens."
-    )
-    JWT_SECRET = secrets.token_hex(32)
+_TOKEN_BLACKLIST: Set[str] = set()
+_MAX_BLACKLIST = 10000
+
+_PASSWORD_MIN_LENGTH = 8
+_PASSWORD_SPECIAL_CHARS = set("!@#$%^&*()-_=+[]{}|;:',.<>?/`~")
+
+
+def _is_strong_password(password: str) -> Tuple[bool, str]:
+    if len(password) < _PASSWORD_MIN_LENGTH:
+        return False, f"Password must be at least {_PASSWORD_MIN_LENGTH} characters."
+    if not re.search(r"[A-Z]", password):
+        return False, "Password must contain an uppercase letter."
+    if not re.search(r"[a-z]", password):
+        return False, "Password must contain a lowercase letter."
+    if not re.search(r"\d", password):
+        return False, "Password must contain a digit."
+    if not any(c in _PASSWORD_SPECIAL_CHARS for c in password):
+        return False, "Password must contain a special character."
+    return True, ""
+
+
+def blacklist_token(token_id: str) -> None:
+    if len(_TOKEN_BLACKLIST) >= _MAX_BLACKLIST:
+        _TOKEN_BLACKLIST.clear()
+    _TOKEN_BLACKLIST.add(token_id)
+
+
+def is_token_blacklisted(token_id: str) -> bool:
+    return token_id in _TOKEN_BLACKLIST
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +101,9 @@ def create_access_token(
         "type": "access",
         "iat": now,
         "exp": now + JWT_EXPIRY_SECONDS,
+        "jti": uuid.uuid4().hex,
+        "iss": JWT_ISSUER,
+        "aud": org_id,
     }
     if extra:
         payload.update(extra)
@@ -91,6 +120,9 @@ def create_refresh_token(user_id: str, org_id: str) -> str:
         "type": "refresh",
         "iat": now,
         "exp": now + JWT_REFRESH_EXPIRY_SECONDS,
+        "jti": uuid.uuid4().hex,
+        "iss": JWT_ISSUER,
+        "aud": org_id,
     }
     if _jwt is None:
         return _encode_fallback_jwt(payload)
@@ -100,8 +132,24 @@ def create_refresh_token(user_id: str, org_id: str) -> str:
 def decode_token(token: str) -> Optional[Dict[str, Any]]:
     try:
         if _jwt is None:
-            return _decode_fallback_jwt(token)
-        return _jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            payload = _decode_fallback_jwt(token)
+        else:
+            payload = _jwt.decode(
+                token, JWT_SECRET,
+                algorithms=[JWT_ALGORITHM],
+                options={"verify_aud": False},
+            )
+        if not payload:
+            return None
+        token_id = payload.get("jti", "")
+        if token_id and is_token_blacklisted(token_id):
+            logger.debug("Token %s is blacklisted", token_id)
+            return None
+        issuer = payload.get("iss", "")
+        if issuer and issuer != JWT_ISSUER:
+            logger.warning("Token issuer mismatch: expected=%s got=%s", JWT_ISSUER, issuer)
+            return None
+        return payload
     except Exception:
         return None
 
@@ -187,7 +235,7 @@ def refresh_access_token(refresh_token: str, permissions: List[str]) -> Optional
 # ---------------------------------------------------------------------------
 
 def generate_api_key() -> Tuple[str, str]:
-    prefix = "hp_"
+    prefix = "mm_"
     raw_key = prefix + secrets.token_urlsafe(32)
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     return raw_key, key_hash

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import time
 import uuid
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -15,6 +17,8 @@ from .models import utc_now
 _DATA_DIR = Path(__file__).resolve().parent / "data"
 
 CATEGORIES = ("preference", "fact", "project", "conversation", "knowledge")
+
+_DEFAULT_TTL_SECONDS = 86400 * 90
 
 
 @dataclass
@@ -27,6 +31,9 @@ class MemoryEntry:
     created_at: str
     accessed_at: str
     importance: float
+    content_hash: str = ""
+    ttl_seconds: int = 0
+    expires_at: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -35,8 +42,9 @@ class MemoryEntry:
 class ConversationMemory:
     """Manages a per-user memory store backed by a JSON file."""
 
-    def __init__(self, user_id: str) -> None:
+    def __init__(self, user_id: str, ttl_seconds: int = _DEFAULT_TTL_SECONDS) -> None:
         self.user_id = user_id
+        self._ttl = ttl_seconds
         self._file = _DATA_DIR / f"memory_{user_id}.json"
         self._entries: List[MemoryEntry] = []
         self._load()
@@ -60,6 +68,28 @@ class ConversationMemory:
         except (json.JSONDecodeError, TypeError):
             self._entries = []
 
+    @staticmethod
+    def _compute_hash(content: str) -> str:
+        return hashlib.sha256(content.strip().lower().encode("utf-8")).hexdigest()[:16]
+
+    def _is_expired(self, entry: MemoryEntry) -> bool:
+        if entry.ttl_seconds <= 0:
+            return False
+        try:
+            created = entry.created_at
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            elapsed = (datetime.now(timezone.utc) - dt).total_seconds()
+            return elapsed > entry.ttl_seconds
+        except (ValueError, TypeError):
+            return False
+
+    def _purge_expired(self) -> None:
+        before = len(self._entries)
+        self._entries = [e for e in self._entries if not self._is_expired(e)]
+        if len(self._entries) < before:
+            self._save()
+
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------
@@ -70,8 +100,18 @@ class ConversationMemory:
         category: str,
         metadata: Optional[Dict[str, Any]] = None,
         importance: float = 0.5,
+        ttl_seconds: Optional[int] = None,
     ) -> MemoryEntry:
+        content_hash = self._compute_hash(content)
+        for existing in self._entries:
+            if existing.content_hash == content_hash and existing.category == category:
+                existing.accessed_at = utc_now()
+                existing.importance = max(existing.importance, importance)
+                self._save()
+                return existing
+
         now = utc_now()
+        ttl = ttl_seconds if ttl_seconds is not None else self._ttl
         entry = MemoryEntry(
             id=str(uuid.uuid4()),
             user_id=self.user_id,
@@ -81,10 +121,22 @@ class ConversationMemory:
             created_at=now,
             accessed_at=now,
             importance=max(0.0, min(1.0, importance)),
+            content_hash=content_hash,
+            ttl_seconds=ttl,
         )
         self._entries.append(entry)
         self._save()
         return entry
+
+    def update_content(self, entry_id: str, new_content: str) -> bool:
+        for entry in self._entries:
+            if entry.id == entry_id:
+                entry.content = new_content
+                entry.content_hash = self._compute_hash(new_content)
+                entry.accessed_at = utc_now()
+                self._save()
+                return True
+        return False
 
     def delete(self, entry_id: str) -> bool:
         before = len(self._entries)
@@ -104,6 +156,7 @@ class ConversationMemory:
         category: Optional[str] = None,
         limit: int = 10,
     ) -> List[MemoryEntry]:
+        self._purge_expired()
         query_words = [w.lower() for w in re.split(r"\W+", query) if w]
         if not query_words:
             return []

@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Mr Money AI API
-  version: 0.2.0
-  description: Enterprise-grade document intelligence platform API.
+  version: 0.3.0
+  description: Enterprise-grade AI document intelligence platform for writing review, AI-writing analysis, citation checks, and publication readiness.
 servers:
   - url: http://127.0.0.1:8765
 paths:

@@ -36,6 +36,7 @@ class ComparisonResult:
     replacements: int
     segments: List[DiffSegment]
     summary: str
+    highlighted_html: str = ""
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -47,12 +48,32 @@ class ComparisonResult:
             "replacements": self.replacements,
             "segments": [s.to_dict() for s in self.segments],
             "summary": self.summary,
+            "highlightedHtml": self.highlighted_html,
         }
 
 
-def compare_documents(old_text: str, new_text: str) -> ComparisonResult:
-    old_lines = old_text.splitlines(keepends=True)
-    new_lines = new_text.splitlines(keepends=True)
+def compare_documents(
+    old_text: str,
+    new_text: str,
+    *,
+    ignore_whitespace: bool = False,
+    ignore_case: bool = False,
+    word_level: bool = False,
+) -> ComparisonResult:
+    old_compare = old_text
+    new_compare = new_text
+    if ignore_whitespace:
+        old_compare = re.sub(r"\s+", " ", old_compare).strip()
+        new_compare = re.sub(r"\s+", " ", new_compare).strip()
+    if ignore_case:
+        old_compare = old_compare.lower()
+        new_compare = new_compare.lower()
+
+    if word_level:
+        return _compare_word_level(old_text, new_text, old_compare, new_compare)
+
+    old_lines = old_compare.splitlines(keepends=True)
+    new_lines = new_compare.splitlines(keepends=True)
 
     differ = difflib.unified_diff(old_lines, new_lines, lineterm="")
     segments: List[DiffSegment] = []
@@ -86,13 +107,13 @@ def compare_documents(old_text: str, new_text: str) -> ComparisonResult:
 
     old_words = _word_count(old_text)
     new_words = _word_count(new_text)
-    similarity = _calculate_similarity(old_text, new_text)
+    similarity = _calculate_similarity(old_compare, new_compare)
 
-    total_changes = insertions + deletions
     if insertions > 0 and deletions > 0:
         replacements = min(insertions, deletions)
 
     summary = _generate_summary(similarity, old_words, new_words, insertions, deletions, replacements)
+    highlighted = highlight_changes(old_text, new_text)
 
     return ComparisonResult(
         similarity_score=similarity,
@@ -103,6 +124,48 @@ def compare_documents(old_text: str, new_text: str) -> ComparisonResult:
         replacements=replacements,
         segments=merged_segments,
         summary=summary,
+        highlighted_html=highlighted,
+    )
+
+
+def _compare_word_level(old_text: str, new_text: str, old_norm: str, new_norm: str) -> ComparisonResult:
+    old_w = old_norm.split()
+    new_w = new_norm.split()
+    sm = difflib.SequenceMatcher(None, old_w, new_w)
+    segments: List[DiffSegment] = []
+    insertions = deletions = replacements = 0
+    orig_words = old_text.split()
+    new_words_list = new_text.split()
+
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            segments.append(DiffSegment("equal", " ".join(orig_words[i1:i2]), " ".join(new_words_list[j1:j2])))
+        elif tag == "replace":
+            segments.append(DiffSegment("replace", " ".join(orig_words[i1:i2]), " ".join(new_words_list[j1:j2])))
+            replacements += 1
+        elif tag == "delete":
+            segments.append(DiffSegment("delete", " ".join(orig_words[i1:i2]), ""))
+            deletions += 1
+        elif tag == "insert":
+            segments.append(DiffSegment("insert", "", " ".join(new_words_list[j1:j2])))
+            insertions += 1
+
+    old_words_count = _word_count(old_text)
+    new_words_count = _word_count(new_text)
+    similarity = _calculate_similarity(old_norm, new_norm)
+    summary = _generate_summary(similarity, old_words_count, new_words_count, insertions, deletions, replacements)
+    highlighted = highlight_changes(old_text, new_text)
+
+    return ComparisonResult(
+        similarity_score=similarity,
+        old_word_count=old_words_count,
+        new_word_count=new_words_count,
+        insertions=insertions,
+        deletions=deletions,
+        replacements=replacements,
+        segments=segments,
+        summary=summary,
+        highlighted_html=highlighted,
     )
 
 

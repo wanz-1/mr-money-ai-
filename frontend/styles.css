@@ -322,10 +322,40 @@ button.sm { min-height: 32px; padding: 0 12px; font-size: 0.82rem; }
 }
 
 /* ── Dashboard ── */
-.dashboard-top { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
-.readiness-block { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.readiness-block .eyebrow { margin-bottom: 0; }
-.summary { color: var(--muted); font-size: 0.92rem; line-height: 1.5; }
+.dashboard-overview { display: grid; grid-template-columns: auto 1fr auto auto; gap: 16px; align-items: start; margin-bottom: 16px; }
+.dash-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; background: var(--surface); }
+.dash-readiness { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.dash-readiness .eyebrow { margin-bottom: 0; }
+.dash-stats { display: grid; gap: 6px; min-width: 160px; }
+.stat-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.88rem; }
+.stat-label { color: var(--muted); }
+.stat-value { font-weight: 600; font-size: 1.1rem; }
+.stat-critical { color: var(--danger); }
+.stat-high { color: var(--warning); }
+.dash-severity { min-width: 180px; }
+.dash-severity .eyebrow { margin-bottom: 8px; }
+.severity-bars { display: grid; gap: 6px; }
+.sev-bar-row { display: grid; grid-template-columns: 60px 1fr 24px; align-items: center; gap: 8px; font-size: 0.8rem; }
+.sev-label { color: var(--muted); text-transform: capitalize; }
+.sev-bar-track { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.sev-bar-fill { height: 100%; border-radius: 99px; transition: width 0.6s ease; }
+.sev-critical { background: var(--danger); }
+.sev-high { background: var(--warning); }
+.sev-medium { background: var(--accent-2); }
+.sev-low { background: var(--accent); }
+.sev-info { background: var(--info); }
+.sev-count { text-align: right; font-weight: 600; }
+.dash-actions-quick { min-width: 100px; }
+.dash-actions-quick .eyebrow { margin-bottom: 8px; }
+.export-btns { display: grid; gap: 6px; }
+.export-btn {
+  display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); font-size: 0.82rem; color: var(--text);
+  cursor: pointer; transition: all var(--transition); white-space: nowrap;
+}
+.export-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.summary { color: var(--muted); font-size: 0.92rem; line-height: 1.5; margin-bottom: 12px; }
 
 /* ── Score grid ── */
 .score-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
@@ -847,8 +877,8 @@ kbd {
 }
 @media (max-width: 480px) {
   .score-grid { grid-template-columns: 1fr; }
-  .dashboard-top { flex-direction: column; align-items: center; }
-  .report-actions { justify-content: center; }
+  .dashboard-overview { grid-template-columns: 1fr; }
+  .export-btns { justify-content: center; }
   .compare-stats { grid-template-columns: repeat(2, 1fr); }
 }
 
@@ -891,7 +921,7 @@ select:focus-visible {
 .skeleton-card {
   height: 120px;
   border-radius: 8px;
-  background: linear-gradient(90deg, var(--panel-bg) 25%, var(--border) 50%, var(--panel-bg) 75%);
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.5s infinite;
 }
@@ -925,4 +955,28 @@ body, .panel, .sidebar, .topbar, .chat-bubble, .auth-card, .modal {
 /* Toast screen reader */
 .toast-container .toast {
   pointer-events: auto;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Print stylesheet */
+@media print {
+  .sidebar, .topbar, .shortcuts-overlay, .toast-container, .auth-wrapper,
+  .chat-input-area, .assistant-sidebar, .export-btns, .toolbar, .filters,
+  .nav-item, .mobile-menu-btn, .user-menu, button { display: none !important; }
+  .app-layout { display: block !important; }
+  .main-content { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+  .page-content { padding: 0 !important; }
+  body { background: white !important; color: black !important; }
+  .panel { border: 1px solid #ccc !important; box-shadow: none !important; break-inside: avoid; }
+  .finding { break-inside: avoid; }
+  a { text-decoration: underline; }
+  a[href]::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #666; }
 }

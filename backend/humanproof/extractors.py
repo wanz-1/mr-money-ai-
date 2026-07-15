@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Iterable, List, Tuple
 from xml.etree import ElementTree
 
+try:
+    from bs4 import BeautifulSoup as _BeautifulSoup
+except ImportError:
+    _BeautifulSoup = None  # type: ignore[assignment]
+
 from .models import Document, DocumentMetadata
 
 
@@ -121,6 +126,13 @@ def _normalize_text(text: str) -> str:
 
 
 def _html_to_text(html: str) -> str:
+    if _BeautifulSoup is not None:
+        soup = _BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+        text = soup.get_text(separator="\n", strip=True)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
     html = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html)
     html = re.sub(r"(?i)<br\s*/?>", "\n", html)
     html = re.sub(r"(?i)</(p|div|section|article|h[1-6]|li|tr)>", "\n", html)
