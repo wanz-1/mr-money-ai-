@@ -1845,7 +1845,7 @@ class HumanProofHandler(BaseHTTPRequestHandler):
         if candidate.is_dir():
             candidate = candidate / "index.html"
         if not candidate.exists():
-        self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
+            self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
@@ -1884,14 +1884,6 @@ class HumanProofHandler(BaseHTTPRequestHandler):
             return
 
         self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
-            return
-        content_type = mimetypes.guess_type(str(candidate))[0] or "application/octet-stream"
-        self.send_response(HTTPStatus.OK)
-        self._headers(content_type)
-        if relative in ("sw.js",):
-            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.end_headers()
-        self.wfile.write(candidate.read_bytes())
 
     # -----------------------------------------------------------------------
     # Helpers
