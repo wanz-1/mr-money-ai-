@@ -1,9 +1,16 @@
-"""Master orchestration engine for Mr Money AI review agents."""
+"""Master orchestration engine for Mr Money AI review agents.
+
+Supports pipeline state machine, parallel agent execution,
+progress callbacks, and partial results on failure.
+"""
 
 from __future__ import annotations
 
+import time
 import uuid
-from typing import Dict, Iterable, List
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from enum import Enum
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from .analyzers import AGENTS, severity_weight, words
 from .models import AgentResult, Document, DocumentMetadata, Finding, ReviewReport, utc_now
@@ -16,13 +23,159 @@ DEFAULT_LIMITATIONS = [
 ]
 
 
-def review_text(text: str, filename: str = "untitled.txt") -> ReviewReport:
-    metadata = DocumentMetadata(filename=filename, file_format="txt", content_type="text/plain", size_bytes=len(text.encode("utf-8")))
-    return review_document(Document(text=text, metadata=metadata))
+class PipelineState(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
+    PARTIAL = "partial"
 
 
-def review_document(document: Document) -> ReviewReport:
-    agent_results: List[AgentResult] = [agent.analyze(document) for agent in AGENTS]
+class ReviewPipeline:
+    """State-machine pipeline for document review."""
+
+    def __init__(self, document: Document, max_workers: int = 4,
+                 progress_callback: Optional[Callable[[str, int, int, str], None]] = None) -> None:
+        self.document = document
+        self.state = PipelineState.PENDING
+        self.max_workers = max_workers
+        self._progress_cb = progress_callback
+        self.agent_results: List[AgentResult] = []
+        self.failed_agents: List[str] = []
+        self.started_at: Optional[str] = None
+        self.completed_at: Optional[str] = None
+        self._total_agents = len(AGENTS)
+
+    def _notify(self, agent_name: str, completed: int, total: int, status: str) -> None:
+        if self._progress_cb:
+            try:
+                self._progress_cb(agent_name, completed, total, status)
+            except Exception:
+                pass
+
+    def run(self) -> ReviewReport:
+        self.state = PipelineState.RUNNING
+        self.started_at = utc_now()
+        completed_count = 0
+
+        def _run_agent(agent: Any) -> AgentResult:
+            nonlocal completed_count
+            try:
+                result = agent.analyze(self.document)
+                completed_count += 1
+                self._notify(agent.AGENT_NAME if hasattr(agent, "AGENT_NAME") else str(agent),
+                             completed_count, self._total_agents, "complete")
+                return result
+            except Exception as exc:
+                completed_count += 1
+                self._notify(agent.AGENT_NAME if hasattr(agent, "AGENT_NAME") else str(agent),
+                             completed_count, self._total_agents, "failed")
+                return AgentResult(
+                    agent=agent.AGENT_NAME if hasattr(agent, "AGENT_NAME") else "unknown",
+                    summary=f"Agent failed: {exc}",
+                    findings=[],
+                    limitations=[f"Agent error: {exc}"],
+                )
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {executor.submit(_run_agent, agent): agent for agent in AGENTS}
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    self.agent_results.append(result)
+                except Exception as exc:
+                    agent = futures[future]
+                    name = agent.AGENT_NAME if hasattr(agent, "AGENT_NAME") else "unknown"
+                    self.failed_agents.append(name)
+
+        if self.failed_agents and not self.agent_results:
+            self.state = PipelineState.FAILED
+        elif self.failed_agents:
+            self.state = PipelineState.PARTIAL
+        else:
+            self.state = PipelineState.COMPLETE
+
+        self.completed_at = utc_now()
+        return self._build_report()
+
+    def _build_report(self) -> ReviewReport:
+        findings = sorted(
+            [f for r in self.agent_results for f in r.findings],
+            key=lambda item: severity_weight(item.severity),
+            reverse=True,
+        )
+        scores = _build_scores(self.agent_results, findings, self.document)
+        score_explanations = _build_score_explanations(scores, self.agent_results, findings, self.document)
+        doc_limitations = list(self.document.limitations)
+        if self.failed_agents:
+            doc_limitations.append(f"Failed agents: {', '.join(self.failed_agents)}")
+        limitations = _merge_limitations(doc_limitations, self.agent_results)
+        summary = _summary(scores, findings, self.document)
+        action_plan = _action_plan(findings)
+        review_id = str(uuid.uuid4())
+        report = ReviewReport(
+            review_id=review_id,
+            created_at=self.completed_at or utc_now(),
+            document=self.document.metadata,
+            summary=summary,
+            scores=scores,
+            findings=findings,
+            agents=self.agent_results,
+            limitations=limitations,
+            action_plan=action_plan,
+            revision_history=[
+                {
+                    "timestamp": self.started_at or utc_now(),
+                    "actor": "Mr Money AI",
+                    "event": f"Review completed (state={self.state.value}, agents={len(self.agent_results)}/{self._total_agents})",
+                }
+            ],
+        )
+        report.score_explanations = score_explanations
+        return report
+
+
+def review_text(text: str, filename: str = "untitled.txt",
+                parallel: bool = False, max_workers: int = 4,
+                progress_callback: Optional[Callable[[str, int, int, str], None]] = None) -> ReviewReport:
+    metadata = DocumentMetadata(filename=filename, file_format="txt",
+                                content_type="text/plain",
+                                size_bytes=len(text.encode("utf-8")))
+    return review_document(Document(text=text, metadata=metadata),
+                           parallel=parallel, max_workers=max_workers,
+                           progress_callback=progress_callback)
+
+
+def review_document(document: Document, parallel: bool = False,
+                    max_workers: int = 4,
+                    progress_callback: Optional[Callable[[str, int, int, str], None]] = None) -> ReviewReport:
+    if parallel:
+        pipeline = ReviewPipeline(document, max_workers=max_workers,
+                                  progress_callback=progress_callback)
+        return pipeline.run()
+
+    agent_results: List[AgentResult] = []
+    for i, agent in enumerate(AGENTS):
+        name = agent.AGENT_NAME if hasattr(agent, "AGENT_NAME") else "unknown"
+        try:
+            result = agent.analyze(document)
+            agent_results.append(result)
+            if progress_callback:
+                try:
+                    progress_callback(name, i + 1, len(AGENTS), "complete")
+                except Exception:
+                    pass
+        except Exception as exc:
+            agent_results.append(AgentResult(
+                agent=name, summary=f"Agent failed: {exc}",
+                findings=[], limitations=[f"Agent error: {exc}"],
+            ))
+            if progress_callback:
+                try:
+                    progress_callback(name, i + 1, len(AGENTS), "failed")
+                except Exception:
+                    pass
+
     findings = sorted(
         [finding for result in agent_results for finding in result.findings],
         key=lambda item: severity_weight(item.severity),
@@ -58,7 +211,7 @@ def review_document(document: Document) -> ReviewReport:
 
 
 def _merge_limitations(document_limitations: Iterable[str], agent_results: Iterable[AgentResult]) -> List[str]:
-    seen = set()
+    seen: set[str] = set()
     merged: List[str] = []
     for item in list(document_limitations) + DEFAULT_LIMITATIONS + [limitation for result in agent_results for limitation in result.limitations]:
         if item and item not in seen:
@@ -155,7 +308,6 @@ def _build_score_explanations(
     findings: List[Finding],
     document: Document,
 ) -> Dict[str, Dict[str, object]]:
-    """Generate explainable AI explanations for every score."""
     explanations: Dict[str, Dict[str, object]] = {}
 
     score_configs = {
@@ -188,16 +340,16 @@ def _build_score_explanations(
 
         if value >= 85:
             assessment = "Excellent"
-            explanation = f"This score indicates strong performance. "
+            explanation = "This score indicates strong performance. "
         elif value >= 70:
             assessment = "Good"
-            explanation = f"Acceptable quality with room for improvement. "
+            explanation = "Acceptable quality with room for improvement. "
         elif value >= 50:
             assessment = "Needs Work"
-            explanation = f"Significant improvements recommended before publication. "
+            explanation = "Significant improvements recommended before publication. "
         else:
             assessment = "Poor"
-            explanation = f"Critical issues found that require immediate attention. "
+            explanation = "Critical issues found that require immediate attention. "
 
         if score_findings:
             top_finding = score_findings[0]
@@ -218,4 +370,3 @@ def _build_score_explanations(
         }
 
     return explanations
-

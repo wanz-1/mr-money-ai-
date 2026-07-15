@@ -5,6 +5,24 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python -m backend.humanproof.server --host 0.0.0.0 --port $PORT
     envVars:
+      - key: HP_PROD
+        value: "true"
+      - key: HP_JWT_SECRET
+        sync: false
+      - key: HP_JWT_EXPIRY
+        value: "3600"
+      - key: HP_JWT_REFRESH_EXPIRY
+        value: "86400"
+      - key: HP_JWT_ISSUER
+        value: mr-money-ai
+      - key: HP_ENCRYPTION_KEY
+        sync: false
+      - key: HP_HOST
+        value: 0.0.0.0
+      - key: HP_CORS_ORIGINS
+        value: ""
+      - key: HP_AUDIT_LOG_FILE
+        value: ""
       - key: HP_AI_PROVIDER
         value: custom
       - key: HP_CUSTOM_API_BASE
@@ -13,7 +31,32 @@ services:
         sync: false
       - key: HP_CUSTOM_MODEL
         value: dev-x
-      - key: HP_HOST
-        value: 0.0.0.0
+      - key: HP_OPENAI_API_KEY
+        sync: false
+      - key: HP_OPENAI_MODEL
+        value: gpt-4o
+      - key: HP_ANTHROPIC_API_KEY
+        sync: false
+      - key: HP_ANTHROPIC_MODEL
+        value: claude-sonnet-4-20250514
+      - key: HP_AI_MAX_TOKENS
+        value: "4096"
+      - key: HP_AI_TEMPERATURE
+        value: "0.7"
+      - key: HP_AI_ROUTING
+        value: auto
+      - key: HP_SEARCH_TIMEOUT
+        value: "10"
+      - key: HP_SEARCH_CACHE_TTL
+        value: "3600"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mrmoney-db
+          property: connectionString
     healthCheckPath: /health
     autoDeploy: true
+
+databases:
+  - name: mrmoney-db
+    plan: free
+    databaseName: mrmoney

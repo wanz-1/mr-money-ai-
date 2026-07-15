@@ -182,6 +182,34 @@ class HumanProofHandler(BaseHTTPRequestHandler):
             self._handle_memory_list(path)
             return
 
+        if path == "/api/webhooks":
+            self._handle_list_webhooks()
+            return
+
+        if path == "/api/api-keys":
+            self._handle_list_api_keys()
+            return
+
+        if path == "/api/knowledge-base":
+            self._handle_list_knowledge(query)
+            return
+
+        if path == "/api/style-guide":
+            self._handle_list_style_terms()
+            return
+
+        if path == "/api/citations":
+            self._handle_list_citations(query)
+            return
+
+        if path == "/api/integrations":
+            self._handle_list_integrations()
+            return
+
+        if path == "/api/metrics":
+            self._handle_metrics()
+            return
+
         self._serve_static(parsed.path)
 
     def do_POST(self) -> None:
@@ -270,6 +298,34 @@ class HumanProofHandler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/memory/"):
             self._handle_memory_add(path)
+            return
+
+        if path == "/api/webhooks":
+            self._handle_create_webhook()
+            return
+
+        if path == "/api/api-keys":
+            self._handle_create_api_key()
+            return
+
+        if path == "/api/knowledge-base":
+            self._handle_create_knowledge()
+            return
+
+        if path == "/api/style-guide":
+            self._handle_create_style_term()
+            return
+
+        if path == "/api/citations":
+            self._handle_create_citation()
+            return
+
+        if path == "/api/integrations":
+            self._handle_create_integration()
+            return
+
+        if path == "/api/batch":
+            self._handle_batch_review()
             return
 
         self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
@@ -833,7 +889,22 @@ class HumanProofHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Humanization failed."}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _handle_research(self, path: str) -> None:
-        self._send_json({"error": "Research intelligence requires the research module (Phase 5)."}, HTTPStatus.NOT_IMPLEMENTED)
+        mw = run_middleware(self)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        parts = [unquote(p) for p in path.split("/") if p]
+        topic = parts[2] if len(parts) >= 3 else ""
+        if not topic:
+            self._send_json({"error": "Topic required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from .search import research_topic as _research_topic
+            result = _research_topic(topic, depth=3)
+            self._send_json(result)
+        except Exception as exc:
+            logger.exception("Research failed")
+            self._send_json({"error": "Research failed.", "topic": topic, "results": []}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _handle_list_templates(self) -> None:
         try:
@@ -1074,7 +1145,7 @@ class HumanProofHandler(BaseHTTPRequestHandler):
     def _capabilities(self) -> dict:
         return {
             "formats": SUPPORTED_FORMATS,
-            "reportFormats": ["json", "md", "html", "docx", "pdf"],
+            "reportFormats": ["json", "md", "html", "docx", "pdf", "csv"],
             "agents": [
                 "Grammar Agent",
                 "Writing Agent",
@@ -1087,6 +1158,12 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 "Authorship Consistency Agent",
                 "Accessibility Agent",
                 "Compliance and Security Agent",
+                "Argument Strength Agent",
+                "Sentence Variety Agent",
+                "Vocabulary Richness Agent",
+                "Paragraph Balance Agent",
+                "PII Detection Agent",
+                "Document Classification Agent",
             ],
             "features": [
                 "authentication",
@@ -1097,10 +1174,18 @@ class HumanProofHandler(BaseHTTPRequestHandler):
                 "comments",
                 "approval_workflows",
                 "ai_assistant",
+                "compliance",
+                "knowledge_base",
+                "style_guide",
+                "webhooks",
+                "api_keys",
+                "integrations",
+                "citations",
+                "batch_processing",
             ],
             "routing": get_routing_info is not None,
             "webSearch": web_search is not None,
-            "agents": AgentRegistry is not None,
+            "agentRegistry": AgentRegistry is not None,
             "memory": ConversationMemory is not None,
             "analysisMode": "local-first transparent decision support",
         }
@@ -1214,6 +1299,540 @@ class HumanProofHandler(BaseHTTPRequestHandler):
         self._send_json({"results": [r.to_dict() for r in results]})
 
     # -----------------------------------------------------------------------
+    # Webhook endpoints
+    # -----------------------------------------------------------------------
+
+    def _handle_list_webhooks(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_WEBHOOKS)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        try:
+            from . import database
+            if database.is_available() and mw.auth_context.org_id:
+                subs = database.list_webhook_subscriptions(mw.auth_context.org_id)
+                self._send_json({"webhooks": subs})
+                return
+        except Exception as exc:
+            logger.exception("Failed to list webhooks")
+        self._send_json({"webhooks": []})
+
+    def _handle_create_webhook(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_WEBHOOKS)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        url = (data.get("url") or "").strip()
+        events = data.get("events", [])
+        if not url or not events:
+            self._send_json({"error": "url and events required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            import secrets as _secrets
+            signing_secret = _secrets.token_hex(32)
+            if database.is_available() and mw.auth_context.org_id:
+                wh = database.create_webhook_subscription(
+                    mw.auth_context.org_id, url, events, signing_secret
+                )
+                audit(mw.auth_context.org_id, "webhook.create", "webhook", wh["id"], mw.auth_context.user_id, get_client_ip(self))
+                self._send_json({**wh, "signingSecret": signing_secret}, HTTPStatus.CREATED)
+                return
+        except Exception as exc:
+            logger.exception("Failed to create webhook")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _handle_delete_webhook(self, path: str) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_WEBHOOKS)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        parts = [unquote(p) for p in path.split("/") if p]
+        webhook_id = parts[2] if len(parts) >= 3 else None
+        if not webhook_id:
+            self._send_json({"error": "Webhook ID required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available():
+                deleted = database.delete_webhook_subscription(webhook_id)
+                self._send_json({"deleted": deleted})
+                return
+        except Exception as exc:
+            logger.exception("Failed to delete webhook")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    # -----------------------------------------------------------------------
+    # API Key endpoints
+    # -----------------------------------------------------------------------
+
+    def _handle_list_api_keys(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_API_KEYS)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        try:
+            from . import database
+            if database.is_available() and mw.auth_context.org_id:
+                keys = database.list_api_keys(mw.auth_context.org_id, mw.auth_context.user_id)
+                self._send_json({"apiKeys": keys})
+                return
+        except Exception as exc:
+            logger.exception("Failed to list API keys")
+        self._send_json({"apiKeys": []})
+
+    def _handle_create_api_key(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_API_KEYS)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        name = (data.get("name") or "").strip()
+        scopes = data.get("scopes", ["read"])
+        if not name:
+            self._send_json({"error": "Name required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            from .auth import generate_api_key
+            import hashlib as _hashlib
+            raw_key, key_hash = generate_api_key()
+            prefix = raw_key[:7]
+            if database.is_available() and mw.auth_context.org_id:
+                ak = database.create_api_key(
+                    mw.auth_context.org_id, mw.auth_context.user_id, name,
+                    key_hash, prefix, scopes
+                )
+                audit(mw.auth_context.org_id, "apikey.create", "api_key", ak["id"], mw.auth_context.user_id, get_client_ip(self))
+                self._send_json({**ak, "key": raw_key}, HTTPStatus.CREATED)
+                return
+        except Exception as exc:
+            logger.exception("Failed to create API key")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _handle_delete_api_key(self, path: str) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_API_KEYS)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        parts = [unquote(p) for p in path.split("/") if p]
+        key_id = parts[2] if len(parts) >= 3 else None
+        if not key_id:
+            self._send_json({"error": "API key ID required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available():
+                deleted = database.delete_api_key(key_id)
+                self._send_json({"deleted": deleted})
+                return
+        except Exception as exc:
+            logger.exception("Failed to delete API key")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    # -----------------------------------------------------------------------
+    # Knowledge base endpoints
+    # -----------------------------------------------------------------------
+
+    def _handle_list_knowledge(self, query: str) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_KNOWLEDGE_BASE)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        try:
+            from . import database
+            if database.is_available() and mw.auth_context.org_id:
+                params = dict(p.split("=") for p in query.split("&") if "=" in p) if query else {}
+                category = params.get("category")
+                entries = database.list_knowledge_entries(mw.auth_context.org_id, category)
+                self._send_json({"entries": entries})
+                return
+        except Exception as exc:
+            logger.exception("Failed to list knowledge entries")
+        self._send_json({"entries": []})
+
+    def _handle_create_knowledge(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_KNOWLEDGE_BASE)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        title = (data.get("title") or "").strip()
+        content_hash = data.get("contentHash", "")
+        source_uri = data.get("sourceUri", "")
+        if not title:
+            self._send_json({"error": "Title required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available() and mw.auth_context.org_id:
+                entry = database.create_knowledge_entry(
+                    mw.auth_context.org_id, title, content_hash, source_uri,
+                    metadata=data.get("metadata", {})
+                )
+                audit(mw.auth_context.org_id, "knowledge.create", "knowledge_entry", entry["id"], mw.auth_context.user_id, get_client_ip(self))
+                self._send_json(entry, HTTPStatus.CREATED)
+                return
+        except Exception as exc:
+            logger.exception("Failed to create knowledge entry")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _handle_update_knowledge(self, path: str) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_KNOWLEDGE_BASE)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        parts = [unquote(p) for p in path.split("/") if p]
+        entry_id = parts[2] if len(parts) >= 3 else None
+        if not entry_id:
+            self._send_json({"error": "Entry ID required."}, HTTPStatus.BAD_REQUEST)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available():
+                updated = database.update_knowledge_entry(
+                    entry_id,
+                    title=data.get("title"),
+                    content_hash=data.get("contentHash"),
+                    metadata=data.get("metadata"),
+                )
+                self._send_json({"updated": updated})
+                return
+        except Exception as exc:
+            logger.exception("Failed to update knowledge entry")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _handle_delete_knowledge(self, path: str) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_KNOWLEDGE_BASE)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        parts = [unquote(p) for p in path.split("/") if p]
+        entry_id = parts[2] if len(parts) >= 3 else None
+        if not entry_id:
+            self._send_json({"error": "Entry ID required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available():
+                deleted = database.delete_knowledge_entry(entry_id)
+                self._send_json({"deleted": deleted})
+                return
+        except Exception as exc:
+            logger.exception("Failed to delete knowledge entry")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    # -----------------------------------------------------------------------
+    # Style guide endpoints
+    # -----------------------------------------------------------------------
+
+    def _handle_list_style_terms(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_STYLE_GUIDES)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        try:
+            from . import database
+            if database.is_available() and mw.auth_context.org_id:
+                terms = database.list_style_terms(mw.auth_context.org_id)
+                self._send_json({"terms": terms})
+                return
+        except Exception as exc:
+            logger.exception("Failed to list style terms")
+        self._send_json({"terms": []})
+
+    def _handle_create_style_term(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_STYLE_GUIDES)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        term = (data.get("term") or "").strip()
+        preferred = data.get("preferredTerm", "")
+        rule = (data.get("rule") or "").strip()
+        severity = data.get("severity", "low")
+        if not term:
+            self._send_json({"error": "Term required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available() and mw.auth_context.org_id:
+                t = database.create_style_term(
+                    mw.auth_context.org_id, term, preferred, rule, severity
+                )
+                self._send_json(t, HTTPStatus.CREATED)
+                return
+        except Exception as exc:
+            logger.exception("Failed to create style term")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _handle_update_style_term(self, path: str) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_STYLE_GUIDES)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        parts = [unquote(p) for p in path.split("/") if p]
+        term_id = parts[2] if len(parts) >= 3 else None
+        if not term_id:
+            self._send_json({"error": "Term ID required."}, HTTPStatus.BAD_REQUEST)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available():
+                updated = database.update_style_term(
+                    term_id,
+                    preferred_term=data.get("preferredTerm"),
+                    rule=data.get("rule"),
+                    severity=data.get("severity"),
+                )
+                self._send_json({"updated": updated})
+                return
+        except Exception as exc:
+            logger.exception("Failed to update style term")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _handle_delete_style_term(self, path: str) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_STYLE_GUIDES)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        parts = [unquote(p) for p in path.split("/") if p]
+        term_id = parts[2] if len(parts) >= 3 else None
+        if not term_id:
+            self._send_json({"error": "Term ID required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available():
+                deleted = database.delete_style_term(term_id)
+                self._send_json({"deleted": deleted})
+                return
+        except Exception as exc:
+            logger.exception("Failed to delete style term")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    # -----------------------------------------------------------------------
+    # Citation endpoints
+    # -----------------------------------------------------------------------
+
+    def _handle_list_citations(self, query: str) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.READ)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        try:
+            from . import database
+            if database.is_available() and mw.auth_context.org_id:
+                params = dict(p.split("=") for p in query.split("&") if "=" in p) if query else {}
+                doc_id = params.get("documentId")
+                citations = database.list_citations(mw.auth_context.org_id, doc_id)
+                self._send_json({"citations": citations})
+                return
+        except Exception as exc:
+            logger.exception("Failed to list citations")
+        self._send_json({"citations": []})
+
+    def _handle_create_citation(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.WRITE)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        title = (data.get("title") or "").strip()
+        if not title:
+            self._send_json({"error": "Title required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available() and mw.auth_context.org_id:
+                cit = database.create_citation(
+                    mw.auth_context.org_id,
+                    data.get("documentId", ""),
+                    title,
+                    data.get("authors", []),
+                    data.get("source", ""),
+                    data.get("url", ""),
+                    data.get("doi", ""),
+                    data.get("year"),
+                )
+                self._send_json(cit, HTTPStatus.CREATED)
+                return
+        except Exception as exc:
+            logger.exception("Failed to create citation")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _handle_delete_citation(self, path: str) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.WRITE)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        parts = [unquote(p) for p in path.split("/") if p]
+        cit_id = parts[2] if len(parts) >= 3 else None
+        if not cit_id:
+            self._send_json({"error": "Citation ID required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available():
+                deleted = database.delete_citation(cit_id)
+                self._send_json({"deleted": deleted})
+                return
+        except Exception as exc:
+            logger.exception("Failed to delete citation")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    # -----------------------------------------------------------------------
+    # Integration endpoints
+    # -----------------------------------------------------------------------
+
+    def _handle_list_integrations(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.READ)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        try:
+            from . import database
+            if database.is_available() and mw.auth_context.org_id:
+                conns = database.list_integration_connections(mw.auth_context.org_id)
+                self._send_json({"integrations": conns})
+                return
+        except Exception as exc:
+            logger.exception("Failed to list integrations")
+        self._send_json({"integrations": []})
+
+    def _handle_create_integration(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_WORKSPACE)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        provider = (data.get("provider") or "").strip()
+        name = (data.get("name") or "").strip()
+        if not provider or not name:
+            self._send_json({"error": "provider and name required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available() and mw.auth_context.org_id:
+                conn = database.create_integration_connection(
+                    mw.auth_context.org_id, provider, name, data.get("config", {})
+                )
+                self._send_json(conn, HTTPStatus.CREATED)
+                return
+        except Exception as exc:
+            logger.exception("Failed to create integration")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _handle_delete_integration(self, path: str) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.MANAGE_WORKSPACE)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        parts = [unquote(p) for p in path.split("/") if p]
+        conn_id = parts[2] if len(parts) >= 3 else None
+        if not conn_id:
+            self._send_json({"error": "Connection ID required."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            from . import database
+            if database.is_available():
+                deleted = database.delete_integration_connection(conn_id)
+                self._send_json({"deleted": deleted})
+                return
+        except Exception as exc:
+            logger.exception("Failed to delete integration")
+        self._send_json({"error": "Database not configured."}, HTTPStatus.SERVICE_UNAVAILABLE)
+
+    # -----------------------------------------------------------------------
+    # Batch processing endpoint
+    # -----------------------------------------------------------------------
+
+    def _handle_batch_review(self) -> None:
+        mw = run_middleware(self, require_auth=True, required_permission=Permission.RUN_BATCH)
+        if not mw.ok:
+            self._send_json({"error": mw.error}, mw.status)
+            return
+        data, err = validate_json_body(self._read_raw_body())
+        if err:
+            self._send_json({"error": err}, HTTPStatus.BAD_REQUEST)
+            return
+        documents = data.get("documents", [])
+        if not documents:
+            self._send_json({"error": "documents list required."}, HTTPStatus.BAD_REQUEST)
+            return
+        results = []
+        for doc in documents[:20]:
+            try:
+                text = doc.get("content", "")
+                filename = doc.get("filename", "batch.txt")
+                metadata = DocumentMetadata(
+                    filename=filename,
+                    file_format=filename.rsplit(".", 1)[-1] if "." in filename else "txt",
+                    content_type="text/plain",
+                    size_bytes=len(text.encode("utf-8")),
+                )
+                document = Document(text=text, metadata=metadata)
+                report = review_document(document)
+                REVIEWS[report.review_id] = report
+                results.append({
+                    "filename": filename,
+                    "reviewId": report.review_id,
+                    "publicationReadiness": report.scores.get("publication_readiness", 0),
+                    "findingCount": len(report.findings),
+                })
+            except Exception as exc:
+                results.append({"filename": doc.get("filename", ""), "error": str(exc)})
+        self._send_json({
+            "results": results,
+            "total": len(documents),
+            "completed": len(results),
+        }, HTTPStatus.CREATED)
+
+    # -----------------------------------------------------------------------
+    # Metrics endpoint
+    # -----------------------------------------------------------------------
+
+    def _handle_metrics(self) -> None:
+        try:
+            from .database import pool_stats, health_check
+            stats = pool_stats()
+            db_health = health_check()
+            self._send_json({
+                "reviews": len(REVIEWS),
+                "database": db_health,
+                "pool": stats,
+            })
+        except Exception:
+            self._send_json({"reviews": len(REVIEWS)})
+
+    # -----------------------------------------------------------------------
     # Static file serving
     # -----------------------------------------------------------------------
 
@@ -1226,7 +1845,45 @@ class HumanProofHandler(BaseHTTPRequestHandler):
         if candidate.is_dir():
             candidate = candidate / "index.html"
         if not candidate.exists():
-            self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
+        self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
+
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+
+        if path.startswith("/api/webhooks/"):
+            self._handle_delete_webhook(path)
+            return
+        if path.startswith("/api/api-keys/"):
+            self._handle_delete_api_key(path)
+            return
+        if path.startswith("/api/knowledge-base/"):
+            self._handle_delete_knowledge(path)
+            return
+        if path.startswith("/api/style-guide/"):
+            self._handle_delete_style_term(path)
+            return
+        if path.startswith("/api/citations/"):
+            self._handle_delete_citation(path)
+            return
+        if path.startswith("/api/integrations/"):
+            self._handle_delete_integration(path)
+            return
+
+        self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
+
+    def do_PUT(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+
+        if path.startswith("/api/knowledge-base/"):
+            self._handle_update_knowledge(path)
+            return
+        if path.startswith("/api/style-guide/"):
+            self._handle_update_style_term(path)
+            return
+
+        self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
             return
         content_type = mimetypes.guess_type(str(candidate))[0] or "application/octet-stream"
         self.send_response(HTTPStatus.OK)
@@ -1350,6 +2007,7 @@ def _humanize_text(text: str, mode: str = "professional") -> dict:
                 "original": match.group(),
                 "suggested": _re.sub(pattern, replacement, match.group(), count=1),
             })
+        improved = _re.sub(pattern, replacement, improved)
 
     filler_words = ["very", "really", "quite", "basically", "actually", "just", "simply"]
     for filler in filler_words:
@@ -1361,6 +2019,8 @@ def _humanize_text(text: str, mode: str = "professional") -> dict:
                 "original": match.group(),
                 "suggested": "",
             })
+        improved = _re.sub(pattern, "", improved, count=2)
+        improved = _re.sub(r"\s{2,}", " ", improved)
 
     wordiness = {
         "due to the fact that": "because",
@@ -1382,6 +2042,7 @@ def _humanize_text(text: str, mode: str = "professional") -> dict:
                     "original": match.group(),
                     "suggested": replacement,
                 })
+            improved = pattern.sub(replacement, improved)
 
     return {
         "original": original,
@@ -1389,7 +2050,7 @@ def _humanize_text(text: str, mode: str = "professional") -> dict:
         "changes": changes,
         "changeCount": len(changes),
         "mode": mode,
-        "message": f"Found {len(changes)} improvement(s). Apply suggestions to improve readability.",
+        "message": f"Found {len(changes)} improvement(s). Applied {len(changes)} change(s) to improve readability.",
     }
 
 

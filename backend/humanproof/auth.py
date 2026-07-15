@@ -244,3 +244,56 @@ def generate_api_key() -> Tuple[str, str]:
 def verify_api_key(raw_key: str, key_hash: str) -> bool:
     computed = hashlib.sha256(raw_key.encode()).hexdigest()
     return hmac.compare_digest(computed, key_hash)
+
+
+# ---------------------------------------------------------------------------
+# TOTP MFA (RFC 6238) — stdlib-only implementation
+# ---------------------------------------------------------------------------
+
+import struct
+
+def generate_mfa_secret(length: int = 20) -> str:
+    raw = secrets.token_bytes(length)
+    return base64.b32encode(raw).decode("ascii").rstrip("=")
+
+
+def _totp_hotp(secret: str, counter: int, digits: int = 6, algo: str = "sha1") -> str:
+    padded = secret.upper() + "=" * ((8 - len(secret) % 8) % 8)
+    key = base64.b32decode(padded)
+    msg = struct.pack(">Q", counter)
+    if algo == "sha256":
+        h = hmac.new(key, msg, hashlib.sha256).digest()
+    elif algo == "sha512":
+        h = hmac.new(key, msg, hashlib.sha512).digest()
+    else:
+        h = hmac.new(key, msg, hashlib.sha1).digest()
+    offset = h[-1] & 0x0F
+    code = struct.unpack(">I", h[offset:offset + 4])[0] & 0x7FFFFFFF
+    return str(code % (10 ** digits)).zfill(digits)
+
+
+def generate_mfa_code(secret: str, time_step: int = 30) -> str:
+    counter = int(time.time()) // time_step
+    return _totp_hotp(secret, counter)
+
+
+def verify_mfa_code(secret: str, code: str, time_step: int = 30,
+                     window: int = 1) -> bool:
+    current_counter = int(time.time()) // time_step
+    for offset in range(-window, window + 1):
+        expected = _totp_hotp(secret, current_counter + offset)
+        if hmac.compare_digest(expected, code):
+            return True
+    return False
+
+
+def generate_mfa_uri(secret: str, email: str, issuer: str = "Mr Money AI") -> str:
+    import urllib.parse as _urllib_parse
+    params = _urllib_parse.urlencode({
+        "secret": secret,
+        "issuer": issuer,
+        "algorithm": "SHA1",
+        "digits": 6,
+        "period": 30,
+    })
+    return f"otpauth://totp/{_urllib_parse.quote(issuer)}:{_urllib_parse.quote(email)}?{params}"

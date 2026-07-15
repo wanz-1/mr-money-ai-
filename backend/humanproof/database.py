@@ -628,3 +628,313 @@ def list_style_terms(org_id: str) -> List[Dict[str, Any]]:
                 (org_id,),
             )
             return [dict(row) for row in cur.fetchall()]
+
+
+def update_style_term(term_id: str, preferred_term: Optional[str] = None,
+                      rule: Optional[str] = None, severity: Optional[str] = None) -> bool:
+    fields: List[str] = []
+    values: List[Any] = []
+    if preferred_term is not None:
+        fields.append("preferred_term = %s")
+        values.append(preferred_term)
+    if rule is not None:
+        fields.append("rule = %s")
+        values.append(rule)
+    if severity is not None:
+        fields.append("severity = %s")
+        values.append(severity)
+    if not fields:
+        return False
+    values.append(term_id)
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute(f"UPDATE style_guide_terms SET {', '.join(fields)} WHERE id = %s", values)
+            return cur.rowcount > 0
+
+
+def delete_style_term(term_id: str) -> bool:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute("DELETE FROM style_guide_terms WHERE id = %s", (term_id,))
+            return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Knowledge base queries (extended)
+# ---------------------------------------------------------------------------
+
+def list_knowledge_entries(org_id: str, category: Optional[str] = None,
+                           limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            if category:
+                cur.execute(
+                    "SELECT id, title, source_uri, content_hash, metadata, created_at FROM knowledge_base_entries WHERE organization_id = %s AND metadata->>'category' = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                    (org_id, category, limit, offset),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, title, source_uri, content_hash, metadata, created_at FROM knowledge_base_entries WHERE organization_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                    (org_id, limit, offset),
+                )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def get_knowledge_entry(entry_id: str) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT * FROM knowledge_base_entries WHERE id = %s", (entry_id,))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+
+def update_knowledge_entry(entry_id: str, title: Optional[str] = None,
+                           content_hash: Optional[str] = None,
+                           metadata: Optional[Dict[str, Any]] = None) -> bool:
+    fields: List[str] = []
+    values: List[Any] = []
+    if title is not None:
+        fields.append("title = %s")
+        values.append(title)
+    if content_hash is not None:
+        fields.append("content_hash = %s")
+        values.append(content_hash)
+    if metadata is not None:
+        fields.append("metadata = %s")
+        values.append(_json(metadata))
+    if not fields:
+        return False
+    values.append(entry_id)
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute(f"UPDATE knowledge_base_entries SET {', '.join(fields)} WHERE id = %s", values)
+            return cur.rowcount > 0
+
+
+def delete_knowledge_entry(entry_id: str) -> bool:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute("DELETE FROM knowledge_base_entries WHERE id = %s", (entry_id,))
+            return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Citation queries
+# ---------------------------------------------------------------------------
+
+def create_citation(
+    org_id: str,
+    doc_id: str,
+    title: str,
+    authors: List[str],
+    source: str,
+    url: str = "",
+    doi: str = "",
+    year: Optional[int] = None,
+) -> Dict[str, Any]:
+    cit_id = _new_id()
+    now = _now()
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """INSERT INTO citations (id, organization_id, document_id, title, authors, source, url, doi, year, created_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (cit_id, org_id, doc_id, title, _json(authors), source, url, doi, year, now),
+            )
+    return {"id": cit_id, "title": title}
+
+
+def list_citations(org_id: str, doc_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            if doc_id:
+                cur.execute(
+                    "SELECT id, title, authors, source, url, doi, year, created_at FROM citations WHERE organization_id = %s AND document_id = %s ORDER BY created_at DESC",
+                    (org_id, doc_id),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, title, authors, source, url, doi, year, created_at FROM citations WHERE organization_id = %s ORDER BY created_at DESC",
+                    (org_id,),
+                )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def delete_citation(citation_id: str) -> bool:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute("DELETE FROM citations WHERE id = %s", (citation_id,))
+            return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# API key queries
+# ---------------------------------------------------------------------------
+
+def create_api_key(org_id: str, user_id: str, name: str,
+                   key_hash: str, prefix: str,
+                   scopes: Optional[List[str]] = None) -> Dict[str, Any]:
+    ak_id = _new_id()
+    now = _now()
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """INSERT INTO api_keys (id, organization_id, user_id, name, key_hash, prefix, scopes, last_used_at, expires_at, created_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s) RETURNING id""",
+                (ak_id, org_id, user_id, name, key_hash, prefix, _json(scopes or []), now),
+            )
+    return {"id": ak_id, "name": name, "prefix": prefix}
+
+
+def list_api_keys(org_id: str, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            if user_id:
+                cur.execute(
+                    "SELECT id, name, prefix, scopes, last_used_at, expires_at, created_at FROM api_keys WHERE organization_id = %s AND user_id = %s ORDER BY created_at DESC",
+                    (org_id, user_id),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, name, prefix, scopes, last_used_at, expires_at, created_at FROM api_keys WHERE organization_id = %s ORDER BY created_at DESC",
+                    (org_id,),
+                )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def get_api_key_by_hash(key_hash: str) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "SELECT id, organization_id, user_id, name, scopes FROM api_keys WHERE key_hash = %s AND (expires_at IS NULL OR expires_at > NOW())",
+                (key_hash,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+
+def delete_api_key(api_key_id: str) -> bool:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute("DELETE FROM api_keys WHERE id = %s", (api_key_id,))
+            return cur.rowcount > 0
+
+
+def update_api_key_last_used(api_key_id: str) -> None:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute("UPDATE api_keys SET last_used_at = %s WHERE id = %s", (_now(), api_key_id))
+
+
+# ---------------------------------------------------------------------------
+# Webhook queries (persistent)
+# ---------------------------------------------------------------------------
+
+def create_webhook_subscription(
+    org_id: str,
+    url: str,
+    events: List[str],
+    signing_secret: str,
+) -> Dict[str, Any]:
+    wh_id = _new_id()
+    now = _now()
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """INSERT INTO webhooks (id, organization_id, url, events, signing_secret, enabled, created_at)
+                   VALUES (%s, %s, %s, %s, %s, true, %s) RETURNING id""",
+                (wh_id, org_id, url, _json(events), signing_secret, now),
+            )
+    return {"id": wh_id, "url": url}
+
+
+def list_webhook_subscriptions(org_id: str) -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "SELECT id, url, events, enabled, created_at FROM webhooks WHERE organization_id = %s ORDER BY created_at DESC",
+                (org_id,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def delete_webhook_subscription(webhook_id: str) -> bool:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute("DELETE FROM webhooks WHERE id = %s", (webhook_id,))
+            return cur.rowcount > 0
+
+
+def get_webhook_signing_secret(webhook_id: str) -> Optional[str]:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT signing_secret FROM webhooks WHERE id = %s", (webhook_id,))
+            row = cur.fetchone()
+            return row["signing_secret"] if row else None
+
+
+# ---------------------------------------------------------------------------
+# Integration connection queries
+# ---------------------------------------------------------------------------
+
+def create_integration_connection(
+    org_id: str,
+    provider: str,
+    name: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    conn_id = _new_id()
+    now = _now()
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """INSERT INTO integration_connections (id, organization_id, provider, name, status, config, created_at, updated_at)
+                   VALUES (%s, %s, %s, %s, 'active', %s, %s, %s) RETURNING id""",
+                (conn_id, org_id, provider, name, _json(config or {}), now, now),
+            )
+    return {"id": conn_id, "provider": provider, "name": name}
+
+
+def list_integration_connections(org_id: str) -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "SELECT id, provider, name, status, config, created_at FROM integration_connections WHERE organization_id = %s ORDER BY created_at DESC",
+                (org_id,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def delete_integration_connection(connection_id: str) -> bool:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute("DELETE FROM integration_connections WHERE id = %s", (connection_id,))
+            return cur.rowcount > 0
+
+
+def update_integration_connection_status(connection_id: str, status: str) -> bool:
+    with get_connection() as conn:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "UPDATE integration_connections SET status = %s, updated_at = %s WHERE id = %s",
+                (status, _now(), connection_id),
+            )
+            return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Pool statistics
+# ---------------------------------------------------------------------------
+
+def pool_stats() -> Dict[str, Any]:
+    if _pool is None:
+        return {"available": False}
+    try:
+        return {
+            "available": True,
+            "min_connections": _pool.minconn,
+            "max_connections": _pool.maxconn,
+            "in_use": getattr(_pool, "_used", {}).count(True) if hasattr(_pool, "_used") else "unknown",
+        }
+    except Exception:
+        return {"available": True}

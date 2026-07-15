@@ -783,3 +783,70 @@ Smith, A. (2021). Rural health access. https://example.org/report`;
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Settings store (API Keys, Webhooks, Knowledge Base, Style Guide, Integrations)
+// ---------------------------------------------------------------------------
+document.addEventListener("alpine:init", () => {
+  Alpine.store("settings", {
+    tab: "api-keys",
+    apiKeys: [], webhooks: [], knowledgeEntries: [], styleTerms: [], integrations: [],
+    showCreateKey: false, showCreateWebhook: false, showCreateKB: false, showCreateTerm: false, showCreateIntegration: false,
+    newKeyName: "", newKeyScopes: "read,write", newKeyRaw: "",
+    newWebhookUrl: "", newWebhookEvents: "review.completed",
+    newKBTitle: "", newKBSource: "",
+    newTerm: "", newTermPreferred: "", newTermRule: "",
+    newIntProvider: "", newIntName: "",
+
+    async _api(method, path, body) {
+      const base = Alpine.store("app").apiBase || "";
+      const headers = { "Content-Type": "application/json" };
+      const token = Alpine.store("auth").token;
+      if (token) headers["Authorization"] = "Bearer " + token;
+      const opts = { method, headers };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(base + path, opts);
+      return res.json();
+    },
+
+    async loadKeys() { this.apiKeys = (await this._api("GET", "/api/api-keys")).apiKeys || []; },
+    async createApiKey() {
+      const r = await this._api("POST", "/api/api-keys", { name: this.newKeyName, scopes: this.newKeyScopes.split(",").map(s => s.trim()) });
+      if (r.key) { this.newKeyRaw = r.key; this.newKeyName = ""; Alpine.store("toast").show("API key created!", "success"); }
+      await this.loadKeys();
+    },
+    async deleteApiKey(id) { await this._api("DELETE", "/api/api-keys/" + id); await this.loadKeys(); },
+
+    async loadWebhooks() { this.webhooks = (await this._api("GET", "/api/webhooks")).webhooks || []; },
+    async createWebhook() {
+      await this._api("POST", "/api/webhooks", { url: this.newWebhookUrl, events: this.newWebhookEvents.split(",").map(s => s.trim()) });
+      this.newWebhookUrl = ""; this.showCreateWebhook = false; await this.loadWebhooks();
+      Alpine.store("toast").show("Webhook created!", "success");
+    },
+    async deleteWebhook(id) { await this._api("DELETE", "/api/webhooks/" + id); await this.loadWebhooks(); },
+
+    async loadKnowledge() { this.knowledgeEntries = (await this._api("GET", "/api/knowledge-base")).entries || []; },
+    async createKnowledge() {
+      await this._api("POST", "/api/knowledge-base", { title: this.newKBTitle, sourceUri: this.newKBSource });
+      this.newKBTitle = ""; this.newKBSource = ""; this.showCreateKB = false; await this.loadKnowledge();
+      Alpine.store("toast").show("Entry created!", "success");
+    },
+    async deleteKnowledge(id) { await this._api("DELETE", "/api/knowledge-base/" + id); await this.loadKnowledge(); },
+
+    async loadStyleGuide() { this.styleTerms = (await this._api("GET", "/api/style-guide")).terms || []; },
+    async createStyleTerm() {
+      await this._api("POST", "/api/style-guide", { term: this.newTerm, preferredTerm: this.newTermPreferred, rule: this.newTermRule });
+      this.newTerm = ""; this.newTermPreferred = ""; this.newTermRule = ""; this.showCreateTerm = false; await this.loadStyleGuide();
+      Alpine.store("toast").show("Term added!", "success");
+    },
+    async deleteStyleTerm(id) { await this._api("DELETE", "/api/style-guide/" + id); await this.loadStyleGuide(); },
+
+    async loadIntegrations() { this.integrations = (await this._api("GET", "/api/integrations")).integrations || []; },
+    async createIntegration() {
+      await this._api("POST", "/api/integrations", { provider: this.newIntProvider, name: this.newIntName });
+      this.newIntProvider = ""; this.newIntName = ""; this.showCreateIntegration = false; await this.loadIntegrations();
+      Alpine.store("toast").show("Integration added!", "success");
+    },
+    async deleteIntegration(id) { await this._api("DELETE", "/api/integrations/" + id); await this.loadIntegrations(); },
+  });
+});
